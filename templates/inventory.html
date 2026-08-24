@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block page_title %}Inventory{% endblock %}
+{% block page_subtitle %}Stock levels & adjustments{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-5 pos-view-enter">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shrink-0"><i data-lucide="boxes" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Total Stock Units</p><p class="text-xl font-bold tabular-nums">{{ total_stock | int }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 shrink-0"><i data-lucide="package" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Inventory Value</p><p class="text-xl font-bold">{{ total_value | money }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 shrink-0"><i data-lucide="alert-triangle" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Out of Stock</p><p class="text-xl font-bold tabular-nums">{{ out_of_stock }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 shrink-0"><i data-lucide="trending-down" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Low Stock</p><p class="text-xl font-bold tabular-nums">{{ low_count }}</p></div></div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-1">Inventory Value by Category</h3>
+      <p class="text-xs text-gray-500 mb-3">At cost · across {{ products | length }} products</p>
+      <div class="h-56"><canvas id="invChart"></canvas></div>
+    </div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-3">Quick Actions</h3>
+      <div class="space-y-2">
+        <button onclick="setStockFilter('low')" class="w-full flex items-center gap-2 h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"><i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500"></i> View Low Stock ({{ low_count }})</button>
+        <button onclick="setStockFilter('out')" class="w-full flex items-center gap-2 h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"><i data-lucide="trending-down" class="w-4 h-4 text-red-500"></i> View Out of Stock ({{ out_of_stock }})</button>
+        <button onclick="setStockFilter('all')" class="w-full flex items-center gap-2 h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4"></i> Show All Items</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="relative flex-1 min-w-64">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+      <input id="invSearch" oninput="filterInventory()" placeholder="Search inventory..." class="w-full pl-9 h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm focus:border-primary-500 focus:outline-none" />
+    </div>
+    <a href="?export=csv" target="_blank" class="flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-xs font-medium"><i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV</a>
+    <select id="invCatFilter" onchange="filterInventory()" class="h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm">
+      <option value="all">All Categories</option>
+      {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    </select>
+    <div class="flex gap-1.5">
+      {% for s in [('all', 'All Items'), ('out', 'Out of Stock'), ('low', 'Low Stock'), ('healthy', 'Healthy'), ('overstock', 'Overstock')] %}
+      <button onclick="setStockFilter('{{ s[0] }}')" id="stock-{{ s[0] }}" class="h-9 px-3 rounded-md text-xs font-medium {% if s[0] == 'all' %}bg-primary-500 text-white{% else %}border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %}">{{ s[1] }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+    <div class="overflow-x-auto pos-scroll max-h-[calc(100vh-620px)] min-h-[300px]">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-800/50 sticky top-0">
+          <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            <th class="px-4 py-3 w-72">Product</th>
+            <th class="px-4 py-3">Category</th>
+            <th class="px-4 py-3 text-center">Current Stock</th>
+            <th class="px-4 py-3 text-center">Threshold</th>
+            <th class="px-4 py-3 text-center">Stock Level</th>
+            <th class="px-4 py-3 text-right">Stock Value</th>
+            <th class="px-4 py-3 text-center">Status</th>
+            <th class="px-4 py-3 text-right">Adjust</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-800" id="invBody">
+          {% for p in products %}
+          {% set is_out = p.stock == 0 %}
+          {% set is_low = p.stock > 0 and p.stock <= p.low_stock_threshold %}
+          {% set is_over = p.stock > 200 %}
+          {% set stock_pct = [100, (p.stock / (p.low_stock_threshold * 3 if p.low_stock_threshold * 3 > 50 else 50)) * 100] | min %}
+          <tr data-product-name="{{ p.name | lower }}" data-product-sku="{{ p.sku | lower }}" data-product-cat="{{ p.category_id }}" data-stock-status="{% if is_out %}out{% elif is_low %}low{% elif is_over %}overstock{% else %}healthy{% endif %}">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg grid place-items-center text-xs font-bold shrink-0" style="background: {{ p.category_color }}22; color: {{ p.category_color }}">{{ p.name[:2] | upper }}</div>
+                <div class="min-w-0"><p class="font-medium text-sm truncate">{{ p.name }}</p><p class="text-[11px] text-gray-500 font-mono">{{ p.sku }}</p></div>
+              </div>
+            </td>
+            <td class="px-4 py-3"><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] border" style="color: {{ p.category_color }}; border-color: {{ p.category_color }}55">{{ p.category_name }}</span></td>
+            <td class="px-4 py-3 text-center"><span class="text-base font-bold tabular-nums {% if is_out %}text-red-600{% elif is_low %}text-amber-600{% endif %}">{{ p.stock }}</span><span class="text-[11px] text-gray-500 ml-1">{{ p.unit }}</span></td>
+            <td class="px-4 py-3 text-center text-gray-500 tabular-nums text-sm">{{ p.low_stock_threshold }}</td>
+            <td class="px-4 py-3"><div class="w-24 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden"><div class="h-full rounded-full {% if is_out %}bg-red-500{% elif is_low %}bg-amber-500{% else %}bg-primary-500{% endif %}" style="width: {{ stock_pct }}%"></div></div></td>
+            <td class="px-4 py-3 text-right tabular-nums font-medium">{{ (p.cost * p.stock) | money }}</td>
+            <td class="px-4 py-3 text-center">
+              {% if is_out %}<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Out of Stock</span>
+              {% elif is_low %}<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-amber-500 text-white">Low Stock</span>
+              {% elif is_over %}<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">Overstock</span>
+              {% else %}<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] border border-emerald-200 text-emerald-600">Healthy</span>{% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <div class="flex items-center justify-end gap-1">
+                <button onclick='openAdjust({{ p | tojson }})' class="grid place-items-center w-8 h-8 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800" title="Add stock"><i data-lucide="plus" class="w-3.5 h-3.5 text-emerald-600"></i></button>
+                <button onclick='openAdjust({{ p | tojson }})' class="grid place-items-center w-8 h-8 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800" title="Remove stock"><i data-lucide="minus" class="w-3.5 h-3.5 text-red-600"></i></button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Adjust modal -->
+<div id="adjustModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-md w-full modal-content">
+    <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
+      <h3 class="font-semibold text-lg">Adjust Stock</h3>
+      <button onclick="closeAdjust()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <form id="adjustForm" method="POST" class="p-5 space-y-4">
+      <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 text-sm space-y-1">
+        <div class="flex justify-between"><span class="text-gray-500">Current Stock</span><span class="font-bold tabular-nums" id="adjCurrent">—</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Threshold</span><span class="tabular-nums" id="adjThreshold">—</span></div>
+      </div>
+      <input type="hidden" name="product_id" id="adjProductId" />
+      <div class="grid grid-cols-3 gap-2">
+        {% for t in [('add', 'plus', 'Add', 'emerald'), ('remove', 'minus', 'Remove', 'red'), ('set', 'arrow-up-down', 'Set', 'primary')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="type" value="{{ t[0] }}" {% if t[0] == 'add' %}checked{% endif %} class="hidden adj-radio" data-type="{{ t[0] }}" />
+          <div class="adj-btn flex flex-col items-center gap-1 py-2 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 adj-inactive-{{ t[0] }}">
+            <i data-lucide="{{ t[1] }}" class="w-4 h-4"></i>
+            <span class="text-xs font-medium">{{ t[2] }}</span>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+      <div><label class="text-xs font-medium block mb-1" id="adjLabel">Quantity to Add</label><input name="amount" type="number" min="0" required class="w-full text-lg font-semibold h-12 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 focus:border-primary-500 focus:outline-none" /></div>
+      <div><label class="text-xs font-medium block mb-1">Reason (optional)</label><textarea name="reason" rows="2" class="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm" placeholder="e.g. New shipment, damaged items..."></textarea></div>
+    </form>
+    <div class="flex gap-2 p-5 pt-0">
+      <button onclick="closeAdjust()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium">Cancel</button>
+      <button onclick="document.getElementById('adjustForm').submit()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const symbol = "{{ settings.currency_symbol }}";
+const catDist = {{ category_dist | tojson }};
+
+new Chart(document.getElementById('invChart'), {
+  type: 'bar',
+  data: {
+    labels: catDist.map(c => c.name),
+    datasets: [{
+      label: 'Inventory Value',
+      data: catDist.map(c => c.value),
+      backgroundColor: catDist.map(c => c.color),
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { y: { ticks: { callback: v => symbol + v } } },
+  },
+});
+
+function filterInventory() {
+  const q = (document.getElementById('invSearch').value || '').toLowerCase();
+  const cat = document.getElementById('invCatFilter').value;
+  const stockBtn = document.querySelector('button[id^="stock-"].bg-primary-500');
+  const stockFilter = stockBtn ? stockBtn.id.replace('stock-', '') : 'all';
+  document.querySelectorAll('#invBody tr').forEach(row => {
+    const name = row.dataset.productName || '';
+    const sku = row.dataset.productSku || '';
+    const matchesSearch = !q || name.includes(q) || sku.includes(q);
+    const matchesCat = cat === 'all' || row.dataset.productCat === cat;
+    const status = row.dataset.stockStatus;
+    let matchesStock = stockFilter === 'all' || stockFilter === status;
+    if (stockFilter === 'low') matchesStock = status === 'low' || status === 'out';
+    row.style.display = (matchesSearch && matchesCat && matchesStock) ? '' : 'none';
+  });
+}
+
+function setStockFilter(filter) {
+  document.querySelectorAll('button[id^="stock-"]').forEach(btn => {
+    if (btn.id === 'stock-' + filter) {
+      btn.classList.add('bg-primary-500', 'text-white');
+      btn.classList.remove('border', 'border-gray-200', 'dark:border-gray-700');
+    } else {
+      btn.classList.remove('bg-primary-500', 'text-white');
+      btn.classList.add('border', 'border-gray-200', 'dark:border-gray-700');
+    }
+  });
+  filterInventory();
+}
+
+function openAdjust(product) {
+  document.getElementById('adjProductId').value = '';
+  document.getElementById('adjustForm').action = '/inventory/' + product.id + '/adjust';
+  document.getElementById('adjCurrent').textContent = product.stock + ' ' + product.unit;
+  document.getElementById('adjThreshold').textContent = product.low_stock_threshold + ' ' + product.unit;
+  document.getElementById('adjustModal').classList.remove('hidden');
+  document.getElementById('adjustModal').classList.add('flex');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeAdjust() {
+  document.getElementById('adjustModal').classList.add('hidden');
+  document.getElementById('adjustModal').classList.remove('flex');
+}
+
+document.querySelectorAll('.adj-radio').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('.adj-radio').forEach(r => {
+      const btn = r.parentElement.querySelector('.adj-btn');
+      const t = r.dataset.type;
+      if (r.checked) {
+        btn.classList.remove('border-gray-200', 'dark:border-gray-700');
+        btn.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-emerald-900/20');
+      } else {
+        btn.classList.add('border-gray-200', 'dark:border-gray-700');
+        btn.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-emerald-900/20');
+      }
+    });
+    const t = radio.value;
+    document.getElementById('adjLabel').textContent = t === 'add' ? 'Quantity to Add' : t === 'remove' ? 'Quantity to Remove' : 'New Stock Level';
+  });
+});
+// Trigger initial styling
+document.querySelector('.adj-radio:checked').dispatchEvent(new Event('change'));
+</script>
+{% endblock %}

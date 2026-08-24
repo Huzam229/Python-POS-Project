@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Orders{% endblock %}
+{% block page_title %}Orders{% endblock %}
+{% block page_subtitle %}Sales history & receipts{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-5 pos-view-enter">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4"><p class="text-xs text-gray-500">Total Orders</p><p class="text-xl font-bold">{{ orders | length }}</p><p class="text-[11px] text-gray-500 mt-0.5">{{ total_items }} items sold</p></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4"><p class="text-xs text-gray-500">Total Revenue</p><p class="text-xl font-bold text-emerald-600">{{ total_revenue | money }}</p></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4"><p class="text-xs text-gray-500">Avg Order Value</p><p class="text-xl font-bold">{{ avg_order | money }}</p></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4"><p class="text-xs text-gray-500">Date Range</p><p class="text-xl font-bold flex items-center gap-1.5"><i data-lucide="calendar" class="w-4 h-4"></i> Last 30d</p></div>
+  </div>
+
+  <form method="GET" class="flex flex-wrap items-end gap-3">
+    <div><label class="text-[11px] font-medium text-gray-500 block mb-1">From</label><input type="date" name="date_from" value="{{ date_from }}" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:border-primary-500 focus:outline-none" /></div>
+    <div><label class="text-[11px] font-medium text-gray-500 block mb-1">To</label><input type="date" name="date_to" value="{{ date_to }}" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:border-primary-500 focus:outline-none" /></div>
+    <div class="relative flex-1 min-w-48">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+      <input name="search" value="{{ search }}" placeholder="Search by order number or customer..." class="w-full pl-9 h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm focus:border-primary-500 focus:outline-none" />
+    </div>
+    <div class="flex gap-1.5">
+      {% for m in ['all', 'cash', 'card', 'wallet'] %}
+      <button type="submit" name="payment" value="{{ m }}" class="h-9 px-3 rounded-md text-xs font-medium capitalize {% if payment_filter == m %}bg-primary-500 text-white{% else %}border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800{% endif %}">{{ m == 'all' and 'All Methods' or m }}</button>
+      {% endfor %}
+    </div>
+    <a href="/orders" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center">Reset</a>
+    <a href="?search={{ search }}&payment={{ payment_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&export=csv" target="_blank" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1"><i data-lucide="download" class="w-3.5 h-3.5"></i> CSV</a>
+  </form>
+
+  <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+    <div class="overflow-x-auto pos-scroll max-h-[calc(100vh-380px)]">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-800/50 sticky top-0">
+          <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            <th class="px-4 py-3 w-32">Order #</th>
+            <th class="px-4 py-3">Date & Time</th>
+            <th class="px-4 py-3">Customer</th>
+            <th class="px-4 py-3">Cashier</th>
+            <th class="px-4 py-3">Items</th>
+            <th class="px-4 py-3">Payment</th>
+            <th class="px-4 py-3 text-right">Subtotal</th>
+            <th class="px-4 py-3 text-right">Tax</th>
+            <th class="px-4 py-3 text-right">Discount</th>
+            <th class="px-4 py-3 text-right">Total</th>
+            <th class="px-4 py-3 w-12"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+          {% if not orders %}
+          <tr><td colspan="11" class="text-center text-gray-400 py-12">No orders found</td></tr>
+          {% endif %}
+          {% for o in orders %}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer" onclick="viewOrder('{{ o.id }}')">
+            <td class="px-4 py-3 font-mono text-xs font-medium">{{ o.order_number }}</td>
+            <td class="px-4 py-3"><div class="text-sm">{{ o.created_at | date }}</div><div class="text-[11px] text-gray-500">{{ o.created_at | time_ago }}</div></td>
+            <td class="px-4 py-3 text-sm">{{ o.customer_name }}</td>
+            <td class="px-4 py-3 text-sm text-gray-500">{{ o.cashier_name }}</td>
+            <td class="px-4 py-3"><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] border border-gray-200 dark:border-gray-700 tabular-nums">{{ o.items_count }} items</span></td>
+            <td class="px-4 py-3"><div class="flex items-center gap-1.5">{% if o.payment_method == 'cash' %}<i data-lucide="banknote" class="w-3.5 h-3.5 text-gray-400"></i>{% elif o.payment_method == 'card' %}<i data-lucide="credit-card" class="w-3.5 h-3.5 text-gray-400"></i>{% else %}<i data-lucide="wallet" class="w-3.5 h-3.5 text-gray-400"></i>{% endif %}<span class="text-xs capitalize">{{ o.payment_method }}</span></div></td>
+            <td class="px-4 py-3 text-right tabular-nums text-sm">{{ o.subtotal | money }}</td>
+            <td class="px-4 py-3 text-right tabular-nums text-sm text-gray-500">{{ o.tax | money }}</td>
+            <td class="px-4 py-3 text-right tabular-nums text-sm">{% if o.discount > 0 %}<span class="text-red-600">-{{ o.discount | money }}</span>{% else %}—{% endif %}</td>
+            <td class="px-4 py-3 text-right font-semibold tabular-nums">{{ o.total | money }}</td>
+            <td class="px-4 py-3"><div class="grid place-items-center w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="eye" class="w-3.5 h-3.5"></i></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="orderModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
+    <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
+      <h3 class="font-semibold text-lg flex items-center gap-2"><i data-lucide="receipt" class="w-5 h-5"></i> Order Details</h3>
+      <button onclick="closeOrderModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div id="orderModalBody" class="p-5"></div>
+    <div class="flex gap-2 p-5 pt-0">
+      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="download" class="w-4 h-4"></i> Print Receipt</button>
+      <button onclick="closeOrderModal()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const symbol = "{{ settings.currency_symbol }}";
+async function viewOrder(orderId) {
+  const res = await fetch('/orders/' + orderId);
+  const order = await res.json();
+  const body = document.getElementById('orderModalBody');
+  body.innerHTML = `
+    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+      <div><p class="text-xs text-gray-500">Order #</p><p class="font-mono font-medium">${order.order_number}</p></div>
+      <div><p class="text-xs text-gray-500">Date</p><p class="font-medium">${new Date(order.created_at).toLocaleString()}</p></div>
+      <div><p class="text-xs text-gray-500">Customer</p><p class="font-medium">${order.customer_name}</p></div>
+      <div><p class="text-xs text-gray-500">Cashier</p><p class="font-medium">${order.cashier_name}</p></div>
+      <div><p class="text-xs text-gray-500">Payment</p><span class="inline-flex items-center px-2 py-0.5 rounded text-xs border border-gray-200 dark:border-gray-700 capitalize">${order.payment_method}</span></div>
+    </div>
+    <div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden mb-4">
+      ${order.items.map(i => `
+        <div class="flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-0">
+          <div class="grid place-items-center w-8 h-8 rounded-md bg-gray-100 dark:bg-gray-800 text-xs font-bold">${i.quantity}×</div>
+          <div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">${i.name}</p><p class="text-[11px] text-gray-500">${i.category_name || '—'}</p></div>
+          <div class="text-right"><p class="text-xs text-gray-500">${symbol}${i.price.toFixed(2)} ea</p><p class="text-sm font-semibold tabular-nums">${symbol}${i.subtotal.toFixed(2)}</p></div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-1.5 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Subtotal</span><span class="tabular-nums">${symbol}${order.subtotal.toFixed(2)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Tax (${order.tax_rate}%)</span><span class="tabular-nums">${symbol}${order.tax.toFixed(2)}</span></div>
+      ${order.discount > 0 ? `<div class="flex justify-between"><span class="text-gray-500">Discount</span><span class="text-red-600 tabular-nums">-${symbol}${order.discount.toFixed(2)}</span></div>` : ''}
+      <div class="flex justify-between font-bold text-base pt-2 border-t border-gray-200 dark:border-gray-700"><span>Total</span><span class="text-primary-600 tabular-nums">${symbol}${order.total.toFixed(2)}</span></div>
+    </div>
+  `;
+  document.getElementById('orderModal').classList.remove('hidden');
+  document.getElementById('orderModal').classList.add('flex');
+  if (window.lucide) lucide.createIcons();
+}
+function closeOrderModal() {
+  document.getElementById('orderModal').classList.add('hidden');
+  document.getElementById('orderModal').classList.remove('flex');
+}
+</script>
+{% endblock %}

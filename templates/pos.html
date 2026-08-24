@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}POS Terminal{% endblock %}
+{% block page_title %}POS Terminal{% endblock %}
+{% block page_subtitle %}Process a new sale{% endblock %}
+
+{% block content %}
+<div class="flex h-full overflow-hidden">
+  <!-- Left: product browser -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div class="px-6 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+      <div class="relative mb-2">
+        <i data-lucide="scan" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-500 pointer-events-none"></i>
+        <input id="barcodeInput" placeholder="Scan barcode..."
+          class="w-full pl-9 pr-4 h-10 rounded-md border-2 border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-sm font-mono focus:border-primary-500 focus:outline-none placeholder:text-gray-400" />
+      </div>
+      <div class="relative mb-3">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+        <input id="productSearch" oninput="filterProducts()" placeholder="Search products by name, SKU or barcode..."
+          class="w-full pl-9 pr-4 h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 focus:outline-none" />
+      </div>
+      <div class="flex items-center gap-2 overflow-x-auto pos-scroll pb-1" id="categoryTabs">
+        <button onclick="setCategory('all')" data-cat="all"
+          class="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500 text-white">All <span class="text-[10px] rounded-full px-1.5 py-0.5 bg-white/20">{{ products | length }}</span></button>
+        {% for c in categories %}
+        <button onclick="setCategory('{{ c.id }}')" data-cat="{{ c.id }}"
+          class="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50">
+          {{ c.name }}
+          <span class="text-[10px] rounded-full px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700">{{ products | selectattr('category_id', 'equalto', c.id) | list | length }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto pos-scroll p-6">
+      <div id="productGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        {% for p in products %}
+        <button data-product-id="{{ p.id | e }}"
+          data-product-cat="{{ p.category_id | e }}"
+          data-product-display-name="{{ p.name | e }}"
+          data-product-name="{{ p.name | lower | e }}"
+          data-product-sku="{{ p.sku | lower | e }}"
+          data-product-barcode="{{ (p.barcode or '') | lower | e }}"
+          data-product-price="{{ p.price }}"
+          data-product-cost="{{ p.cost }}"
+          data-product-stock="{{ p.stock }}"
+          {% if p.stock <= 0 %}disabled{% endif %}
+          class="product-btn group relative text-left rounded-xl border bg-white dark:bg-gray-900 hover:border-primary-500 hover:shadow-md transition-all overflow-hidden
+          {% if p.stock <= 0 %}opacity-50 cursor-not-allowed{% endif %}">
+          <div class="h-20 relative grid place-items-center" style="background: linear-gradient(135deg, {{ p.category_color }}22, {{ p.category_color }}11)">
+            <span class="text-2xl font-bold opacity-70" style="color: {{ p.category_color }}">{{ p.name[:2] | upper }}</span>
+            {% if p.stock <= 0 %}<span class="absolute top-1.5 left-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Out</span>{% endif %}
+          </div>
+          <div class="p-2.5">
+            <p class="text-xs font-medium line-clamp-2 leading-tight min-h-[2rem]">{{ p.name }}</p>
+            <div class="mt-1.5 flex items-center justify-between">
+              <span class="text-sm font-bold text-primary-600">{{ p.price | money }}</span>
+              <span class="text-[10px] text-gray-500 tabular-nums">{{ p.stock }} {{ p.unit }}</span>
+            </div>
+          </div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: cart panel -->
+  <div class="w-[380px] border-l border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col overflow-hidden shrink-0">
+    <div class="px-4 h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2">
+        <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+        <span class="font-semibold text-sm">Current Sale</span>
+        <span id="cartCount" class="hidden text-[10px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">0 items</span>
+      </div>
+      <button onclick="clearCart()" id="clearBtn" class="hidden text-xs text-red-600 hover:text-red-700 font-medium">Clear</button>
+    </div>
+
+    <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 shrink-0">
+      <div id="customerPicker" class="relative">
+        <div id="customerTag" class="hidden flex items-center gap-2 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-md px-3 py-1.5">
+          <i data-lucide="user" class="w-3.5 h-3.5 text-primary-600 shrink-0"></i>
+          <div class="flex-1 min-w-0"><p id="customerTagName" class="text-xs font-medium truncate"></p><p id="customerTagPhone" class="text-[10px] text-gray-500 truncate"></p></div>
+          <button onclick="clearCustomer()" class="grid place-items-center w-5 h-5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500"><i data-lucide="x" class="w-3 h-3"></i></button>
+        </div>
+        <input id="customerSearch" placeholder="Search customer by name or phone..."
+          class="w-full h-9 text-xs rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-2 focus:border-primary-500 focus:outline-none" />
+        <div id="customerDropdown" class="hidden absolute top-full left-0 right-0 z-20 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-48 overflow-y-auto pos-scroll"></div>
+      </div>
+      <div id="noCustomers" class="text-[10px] text-gray-400 mt-1 hidden">No customers matching</div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto pos-scroll">
+      <div id="cart" class="p-4 space-y-2 min-h-full">
+        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-400 py-16">
+          <div>
+            <i data-lucide="shopping-cart" class="w-10 h-10 mx-auto mb-2 opacity-30"></i>
+            <p class="text-sm font-medium">Empty cart</p>
+            <p class="text-xs mt-1">Tap products to start a sale</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 shrink-0">
+      <div class="px-4 py-3 space-y-1.5">
+        <div class="flex items-center justify-between text-sm"><span class="text-gray-500">Subtotal</span><span id="subtotal" class="font-medium tabular-nums">{{ 0 | money }}</span></div>
+        <div class="flex items-center justify-between text-sm"><span class="text-gray-500">Tax ({{ settings.tax_rate }}%)</span><span id="tax" class="font-medium tabular-nums">{{ 0 | money }}</span></div>
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-gray-500 flex items-center gap-1"><i data-lucide="percent" class="w-3 h-3"></i> Discount</span>
+          <input id="discountInput" type="number" min="0" step="0.01" value="0" oninput="updateTotals()"
+            class="w-24 h-7 text-right tabular-nums rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 text-sm focus:border-primary-500 focus:outline-none" placeholder="0.00" />
+        </div>
+        <div class="border-t border-gray-200 dark:border-gray-700 my-1.5"></div>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">Total</span>
+          <span id="total" class="text-xl font-bold tabular-nums text-primary-600">{{ 0 | money }}</span>
+        </div>
+      </div>
+      <div class="px-4 pb-4">
+        <button id="chargeBtn" onclick="openCheckout()" disabled
+          class="w-full h-12 text-base font-semibold rounded-md bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
+          <i data-lucide="credit-card" class="w-5 h-5"></i>
+          <span>Charge <span id="chargeAmount">{{ 0 | money }}</span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Checkout modal -->
+<div id="checkoutModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-md w-full modal-content">
+    <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
+      <h3 class="font-semibold text-lg">Complete Payment</h3>
+      <button onclick="closeCheckout()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div class="grid grid-cols-3 gap-2">
+        {% for m in [('cash', 'banknote', 'Cash'), ('card', 'credit-card', 'Card'), ('wallet', 'wallet', 'Wallet')] %}
+        <button onclick="setPayment('{{ m[0] }}')" id="pay-{{ m[0] }}"
+          class="flex flex-col items-center gap-1.5 py-3 rounded-xl border-2 transition-all
+          {% if m[0] == 'cash' %}border-primary-500 bg-primary-50 dark:bg-emerald-900/20{% else %}border-gray-200 dark:border-gray-700 hover:border-gray-400{% endif %}">
+          <i data-lucide="{{ m[1] }}" class="w-5 h-5 {% if m[0] == 'cash' %}text-primary-600{% else %}text-gray-400{% endif %}"></i>
+          <span class="text-xs font-medium {% if m[0] == 'cash' %}text-primary-600{% endif %}">{{ m[2] }}</span>
+        </button>
+        {% endfor %}
+      </div>
+
+      <div class="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-1.5">
+        <div class="flex justify-between text-sm"><span class="text-gray-500">Subtotal</span><span class="tabular-nums" id="coSubtotal">{{ 0 | money }}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-gray-500">Tax</span><span class="tabular-nums" id="coTax">{{ 0 | money }}</span></div>
+        <div class="flex justify-between text-sm hidden" id="coDiscRow"><span class="text-gray-500">Discount</span><span class="text-red-600 tabular-nums" id="coDiscount">-{{ 0 | money }}</span></div>
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between font-semibold text-base"><span>Total Due</span><span class="text-primary-600 tabular-nums" id="coTotal">{{ 0 | money }}</span></div>
+      </div>
+
+      <div id="cashSection" class="space-y-2">
+        <label class="text-xs font-medium text-gray-600">Cash Received</label>
+        <input id="paidAmount" type="number" min="0" step="0.01" oninput="updateChange()"
+          class="w-full text-lg font-semibold h-12 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 focus:border-primary-500 focus:outline-none" />
+        <div id="changeRow" class="hidden flex justify-between bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-3 py-2 text-sm">
+          <span class="text-emerald-700 dark:text-emerald-400">Change Due</span>
+          <span class="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums" id="changeAmount">{{ 0 | money }}</span>
+        </div>
+        <div class="flex gap-2" id="quickCash"></div>
+      </div>
+    </div>
+    <div class="flex gap-2 p-5 pt-0">
+      <button onclick="closeCheckout()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium">Cancel</button>
+      <button onclick="processSale()" id="processBtn" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Complete Sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- Receipt modal -->
+<div id="receiptModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-sm w-full modal-content">
+    <div class="p-5 text-center">
+      <div class="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/40 grid place-items-center mx-auto mb-2">
+        <i data-lucide="check-circle-2" class="w-8 h-8 text-emerald-600"></i>
+      </div>
+      <h3 class="text-lg font-semibold">Payment Successful</h3>
+      <p class="text-xs text-gray-500" id="receiptOrderNumber">Order</p>
+    </div>
+    <div id="receiptBody" class="px-5 pb-5"></div>
+    <div class="flex gap-2 px-5 pb-5">
+      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button>
+      <button onclick="closeReceipt()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">New Sale</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pos.js') }}"></script>
+<script>
+  window.taxRate = {{ settings.tax_rate }};
+  window.currencySymbol = "{{ settings.currency_symbol }}";
+  window.storeName = "{{ settings.store_name | e }}";
+  window.storeAddress = "{{ settings.address | e }}";
+  window.storePhone = "{{ settings.phone | e }}";
+  window.receiptFooter = "{{ settings.receipt_footer | e }}";
+  window.customers = [
+    {% for c in customers %}{% if c.name != "Walk-in Customer" %}
+    { id: "{{ c.id }}", name: "{{ c.name | e }}", phone: "{{ (c.phone or '') | e }}", pts: {{ c.loyalty_points }} },
+    {% endif %}{% endfor %}
+  ];
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Connect Google Drive{% endblock %}
+{% block page_title %}Connect Google Drive{% endblock %}
+{% block page_subtitle %}Authorize access to upload backups{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-xl mx-auto space-y-5 pos-view-enter">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+      <div class="flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium
+        {% if category == 'error' %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300
+        {% elif category == 'success' %}bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300
+        {% else %}bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300{% endif %}">
+        <i data-lucide="{% if category == 'error' %}alert-circle{% elif category == 'success' %}check-circle{% else %}info{% endif %}" class="w-4 h-4 shrink-0"></i>
+        <span>{{ message }}</span>
+      </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 grid place-items-center"><i data-lucide="cloud" class="w-5 h-5"></i></div>
+      <div><h3 class="font-semibold text-base">Step 1: Authorize</h3><p class="text-xs text-gray-500">Click the button below, sign in to Google, and grant access</p></div>
+    </div>
+    <a href="{{ auth_url }}" target="_blank" class="flex items-center justify-center gap-2 w-full h-11 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold transition-colors">
+      <i data-lucide="external-link" class="w-4 h-4"></i> Open Google Authorization
+    </a>
+
+    <div class="border-t border-gray-200 dark:border-gray-800 pt-5">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 grid place-items-center"><i data-lucide="key-round" class="w-5 h-5"></i></div>
+        <div><h3 class="font-semibold text-base">Step 2: Enter Code</h3><p class="text-xs text-gray-500">After authorizing, copy the code from Google and paste it below</p></div>
+      </div>
+      <form method="POST" action="/backup/auth/google" class="space-y-3">
+        <input name="code" required autofocus placeholder="Paste the authorization code here"
+          class="w-full h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm font-mono text-center focus:border-primary-500 focus:outline-none" />
+        <button type="submit" class="w-full h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors">
+          <i data-lucide="check-circle" class="w-4 h-4"></i> Complete Connection
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 text-xs text-gray-500 space-y-1">
+    <p class="font-medium text-gray-700 dark:text-gray-300">Having trouble?</p>
+    <p>• Make sure your Google Cloud project has the <strong>Drive API</strong> enabled</p>
+    <p>• Use a <strong>Desktop app</strong> OAuth 2.0 Client ID, not a Web application</p>
+    <p>• If the code expires, just refresh this page and try again</p>
+    <p>• <a href="/backup" class="text-primary-500 hover:underline">Cancel and go back</a></p>
+  </div>
+</div>
+{% endblock %}

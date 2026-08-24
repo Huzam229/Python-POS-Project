@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en" class="">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}QuickPOS{% endblock %} — QuickPOS</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#10b981',
+              foreground: '#ffffff',
+              50: '#ecfdf5', 100: '#d1fae5', 200: '#a7f3d0', 300: '#6ee7b7',
+              400: '#34d399', 500: '#10b981', 600: '#059669', 700: '#047857',
+              800: '#065f46', 900: '#064e3b',
+            },
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script>
+    // Apply theme before render to avoid flash
+    (function () {
+      const theme = localStorage.getItem('quickpos-theme') || 'light';
+      if (theme === 'dark') document.documentElement.classList.add('dark');
+    })();
+  </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans antialiased">
+  <div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="flex flex-col w-60 shrink-0 bg-gray-900 text-gray-100 border-r border-gray-800">
+      <div class="flex items-center gap-3 px-4 h-16 border-b border-gray-800 shrink-0">
+        <div class="grid place-items-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-emerald-600 text-white shadow-md shrink-0">
+          <i data-lucide="store" class="w-5 h-5"></i>
+        </div>
+        <div class="flex flex-col leading-tight overflow-hidden">
+          <span class="font-bold text-[15px]">QuickPOS</span>
+          <span class="text-[11px] text-gray-400">Python Edition</span>
+        </div>
+      </div>
+      {% set sales_keys = ['products','orders','invoices','inventory','customers'] %}
+      {% set is_sales_active = active_view in sales_keys %}
+      <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1 pos-scroll">
+        {% set nav = [
+          ('dashboard', 'Dashboard', 'layout-dashboard', 'Overview & stats', '/'),
+          ('pos', 'POS Terminal', 'shopping-cart', 'New sale / checkout', '/pos'),
+          ('reports', 'Reports', 'bar-chart-3', 'Analytics', '/reports'),
+          ('users', 'Users', 'shield', 'Staff accounts', '/users'),
+          ('backup', 'Backup', 'hard-drive', 'DB snapshots & cloud', '/backup'),
+          ('settings', 'Settings', 'settings', 'Store config', '/settings'),
+        ] %}
+        {% for key, label, icon, desc, href in nav %}
+        {% if (key not in ('users','backup')) or session.user_role == 'admin' %}
+        <a href="{{ href }}"
+           class="group w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all
+           {% if active_view == key %}bg-primary-500 text-white shadow-sm{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %}">
+          <i data-lucide="{{ icon }}" class="w-[18px] h-[18px] shrink-0"></i>
+          <div class="flex flex-col items-start leading-tight overflow-hidden flex-1">
+            <span>{{ label }}</span>
+            <span class="text-[10.5px] opacity-60 font-normal truncate">{{ desc }}</span>
+          </div>
+        </a>
+        {% endif %}
+        {% endfor %}
+
+        <!-- Sales parent with submenu -->
+        <div>
+          <button onclick="toggleSales(event)" class="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-left
+            {% if is_sales_active %}bg-primary-500 text-white shadow-sm{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %}">
+            <i data-lucide="shopping-bag" class="w-[18px] h-[18px] shrink-0"></i>
+            <div class="flex flex-col items-start leading-tight overflow-hidden flex-1">
+              <span>Sales</span>
+              <span class="text-[10.5px] opacity-60 font-normal truncate">Products, orders & inventory</span>
+            </div>
+            <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 transition-transform duration-200 {% if is_sales_active %}rotate-180{% endif %}"></i>
+          </button>
+          <div id="salesSubmenu" class="overflow-hidden transition-all duration-200 {% if not is_sales_active %}max-h-0{% endif %}">
+            <div class="pt-1 pb-1 space-y-0.5 pl-3">
+              {% for key, label, icon, desc, href in [
+                ('products', 'Products', 'package', 'Manage catalog', '/products'),
+                ('orders', 'Orders', 'receipt', 'Sales history', '/orders'),
+                ('invoices', 'Invoices', 'file-text', 'Print receipts', '/invoices'),
+                ('inventory', 'Inventory', 'boxes', 'Stock levels', '/inventory'),
+                ('customers', 'Customers', 'users', 'CRM & loyalty', '/customers'),
+              ] %}
+              <a href="{{ href }}"
+                 class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all
+                 {% if active_view == key %}bg-primary-600 text-white shadow-sm{% else %}text-gray-400 hover:bg-gray-800 hover:text-white{% endif %}">
+                <i data-lucide="{{ icon }}" class="w-4 h-4 shrink-0"></i>
+                <span>{{ label }}</span>
+              </a>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </nav>
+      <div class="border-t border-gray-800 p-3">
+        <div class="flex items-center gap-2 text-xs text-gray-400">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-emerald-600 grid place-items-center text-white font-semibold text-xs">{{ (session.user_name or 'U')[:2] | upper }}</div>
+          <div class="flex flex-col leading-tight">
+            <span class="text-gray-200">{{ session.user_name or 'User' }}</span>
+            <span class="text-[10px] capitalize">{{ session.user_role or 'cashier' }}</span>
+          </div>
+        </div>
+        <button onclick="window.location.href='/logout'" class="mt-2 w-full flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-200 transition-colors"><i data-lucide="log-out" class="w-3.5 h-3.5"></i> Sign Out</button>
+      </div>
+    </aside>
+
+    <!-- Main area -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Header -->
+      <header class="flex items-center gap-4 h-16 px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0">
+        <div class="flex flex-col leading-tight">
+          <h1 id="page-title" class="text-lg font-bold tracking-tight">{% block page_title %}{% endblock %}</h1>
+          <p id="page-subtitle" class="text-xs text-gray-500 dark:text-gray-400">{% block page_subtitle %}{% endblock %}</p>
+        </div>
+        <div class="flex-1"></div>
+        <div id="clock" class="hidden lg:flex flex-col items-end leading-tight">
+          <span class="text-sm font-semibold tabular-nums" id="clock-time">--:--:--</span>
+          <span class="text-[11px] text-gray-500" id="clock-date">Loading...</span>
+        </div>
+        <button onclick="toggleTheme()" class="grid place-items-center w-9 h-9 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Toggle theme">
+          <i data-lucide="moon" class="w-[18px] h-[18px] dark:hidden"></i>
+          <i data-lucide="sun" class="w-[18px] h-[18px] hidden dark:block"></i>
+        </button>
+        <button onclick="document.documentElement.requestFullscreen?.()" class="grid place-items-center w-9 h-9 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Fullscreen">
+          <i data-lucide="maximize-2" class="w-[18px] h-[18px]"></i>
+        </button>
+      </header>
+
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="fixed top-20 right-4 z-50 space-y-2 max-w-sm">
+            {% for category, message in messages %}
+              <div class="flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium animate-slide-in
+                {% if category == 'error' %}bg-red-500 text-white{% elif category == 'success' %}bg-emerald-500 text-white{% else %}bg-gray-800 text-white{% endif %}">
+                <i data-lucide="{% if category == 'error' %}alert-circle{% elif category == 'success' %}check-circle{% else %}info{% endif %}" class="w-4 h-4 shrink-0"></i>
+                <span>{{ message }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <!-- Main content -->
+      <main class="flex-1 overflow-y-auto pos-scroll bg-gray-50 dark:bg-gray-950">
+        <div id="app">
+        {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script data-app="base">
+    // Initialize Lucide icons
+    if (window.lucide) lucide.createIcons();
+
+    // Theme toggle
+    function toggleTheme() {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('quickpos-theme', isDark ? 'dark' : 'light');
+    }
+
+    // Live clock
+    function updateClock() {
+      const now = new Date();
+      const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const date = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const timeEl = document.getElementById('clock-time');
+      const dateEl = document.getElementById('clock-date');
+      if (timeEl) timeEl.textContent = time;
+      if (dateEl) dateEl.textContent = date;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Toggle Sales submenu
+    function toggleSales(e) {
+      e.stopPropagation();
+      const btn = e.currentTarget;
+      const sub = document.getElementById('salesSubmenu');
+      const chevron = btn.querySelector('[data-lucide="chevron-down"]');
+      const isOpen = sub.classList.contains('max-h-0');
+      sub.classList.toggle('max-h-0');
+      if (chevron) chevron.classList.toggle('rotate-180');
+      localStorage.setItem('quickpos-sales-open', isOpen ? '1' : '0');
+    }
+    // Restore Sales submenu state from localStorage
+    (function() {
+      const saved = localStorage.getItem('quickpos-sales-open');
+      if (saved === '1') {
+        const sub = document.getElementById('salesSubmenu');
+        const chevron = document.querySelector('#salesSubmenu')?.previousElementSibling?.querySelector('[data-lucide="chevron-down"]');
+        if (sub) sub.classList.remove('max-h-0');
+        if (chevron) chevron.classList.add('rotate-180');
+      }
+    })();
+
+    // Auto-dismiss flash messages after 3s
+    setTimeout(() => {
+      document.querySelectorAll('.animate-slide-in').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(100%)';
+        setTimeout(() => el.remove(), 300);
+      });
+    }, 3500);
+  </script>
+
+  <script data-app="base">
+  // SPA navigation — intercept links & forms, load pages without full refresh
+  (function () {
+    let isNavigating = false;
+
+    document.addEventListener('click', function (e) {
+      const link = e.target.closest('a');
+      if (!link) return;
+      const href = link.getAttribute('href');
+      if (!href || href === '#' || href.startsWith('http') || href.startsWith('//')) return;
+      if (link.hasAttribute('download') || link.target === '_blank') return;
+      if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault();
+      navigateTo(href);
+    });
+
+    document.addEventListener('submit', function (e) {
+      const form = e.target;
+      if (!form.matches('form')) return;
+      if (form.method && form.method.toLowerCase() === 'post') return;
+      if (form.querySelector('input[type="file"]')) return;
+      e.preventDefault();
+      const url = new URL(form.action || window.location.href);
+      new FormData(form).forEach((v, k) => url.searchParams.set(k, v));
+      navigateTo(url.pathname + url.search);
+    });
+
+    async function navigateTo(url) {
+      if (isNavigating) return;
+      isNavigating = true;
+      try {
+        // Destroy existing charts
+        if (typeof Chart !== 'undefined') {
+          document.querySelectorAll('canvas').forEach(function (c) {
+            var ch = Chart.getChart(c);
+            if (ch) ch.destroy();
+          });
+        }
+
+        var res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!res.ok) { window.location.href = url; return; }
+        var html = await res.text();
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+
+        // Replace main content
+        var newApp = doc.getElementById('app');
+        if (!newApp) { window.location.href = url; return; }
+
+        // Extract page-specific scripts (not data-app="base") from new main content
+        var scripts = [];
+        var allScripts = newApp.querySelectorAll('script');
+        allScripts.forEach(function (s) { scripts.push(s); s.remove(); });
+
+        // Also extract scripts from the body that aren't base scripts
+        var bodyScripts = doc.body.querySelectorAll('script:not([data-app="base"])');
+        bodyScripts.forEach(function (s) {
+          // Avoid duplicates: check if this script src is already in scripts
+          if (s.src) {
+            var dup = scripts.some(function (es) { return es.src && es.src === s.src; });
+            if (!dup) scripts.push(s);
+          } else {
+            scripts.push(s);
+          }
+        });
+
+        var appEl = document.getElementById('app');
+        appEl.innerHTML = newApp.innerHTML;
+
+        // Update page header
+        var newTitle = doc.querySelector('title');
+        if (newTitle) document.title = newTitle.textContent;
+        var h1 = document.getElementById('page-title');
+        var sub = document.getElementById('page-subtitle');
+        var newH1 = doc.getElementById('page-title');
+        var newSub = doc.getElementById('page-subtitle');
+        if (h1 && newH1) h1.textContent = newH1.textContent;
+        if (sub && newSub) sub.textContent = newSub.textContent;
+
+        // Update sidebar active state
+        var sidebar = document.querySelector('nav');
+        var path = url.split('?')[0];
+        var salesKeys = ['products','orders','invoices','inventory','customers'];
+        var inSales = salesKeys.some(function (k) { return path.startsWith('/' + k); });
+        sidebar.querySelectorAll('a').forEach(function (a) {
+          var ah = a.getAttribute('href');
+          if (ah === '/users') { a.style.display = ''; } // ignore
+          var isTopNav = a.closest('[id="salesSubmenu"]') === null;
+          var active = ah === '/' ? path === '/' : ah !== '/' && path.startsWith(ah);
+          if (active) {
+            a.className = (isTopNav ? 'group w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all bg-primary-500 text-white shadow-sm' : 'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all bg-primary-600 text-white shadow-sm');
+          } else {
+            a.className = (isTopNav ? 'group w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-gray-300 hover:bg-gray-800 hover:text-white' : 'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all text-gray-400 hover:bg-gray-800 hover:text-white');
+          }
+        });
+        // Update Sales parent button
+        var salesBtn = sidebar.querySelector('button[onclick*="toggleSales"]');
+        if (salesBtn) {
+          if (inSales) {
+            salesBtn.className = 'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-left bg-primary-500 text-white shadow-sm';
+          } else {
+            salesBtn.className = 'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-left text-gray-300 hover:bg-gray-800 hover:text-white';
+          }
+        }
+        // Auto-open Sales submenu if inside it
+        if (inSales) {
+          var sub = document.getElementById('salesSubmenu');
+          var chevron = document.querySelector('#salesSubmenu')?.previousElementSibling?.querySelector('[data-lucide="chevron-down"]');
+          if (sub) sub.classList.remove('max-h-0');
+          if (chevron) chevron.classList.add('rotate-180');
+          localStorage.setItem('quickpos-sales-open', '1');
+        }
+
+        // Push new URL state
+        history.pushState({ url: url }, '', url);
+
+        // Re-execute scripts
+        scripts.forEach(function (old) {
+          var s = document.createElement('script');
+          if (old.src) { s.src = old.src; }
+          else { s.textContent = old.textContent; }
+          document.body.appendChild(s);
+        });
+
+        // Re-init Lucide
+        if (window.lucide) lucide.createIcons();
+      } catch (e) {
+        window.location.href = url;
+      } finally {
+        isNavigating = false;
+      }
+    }
+
+    // Handle back/forward
+    window.addEventListener('popstate', function (e) {
+      if (e.state && e.state.url) {
+        navigateTo(e.state.url);
+      }
+    });
+  })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

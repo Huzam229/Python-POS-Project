@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Today's store overview{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-6 pos-view-enter">
+  <!-- KPI cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 hover-card">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Today's Revenue</p>
+          <p class="mt-2 text-2xl font-bold tracking-tight">{{ stats.today_revenue | money }}</p>
+          <div class="mt-2 flex items-center gap-1.5 text-xs">
+            {% if stats.revenue_change >= 0 %}
+              <i data-lucide="trending-up" class="w-3.5 h-3.5 text-emerald-600"></i>
+              <span class="text-emerald-600 font-semibold">+{{ stats.revenue_change }}%</span>
+            {% else %}
+              <i data-lucide="trending-down" class="w-3.5 h-3.5 text-red-600"></i>
+              <span class="text-red-600 font-semibold">{{ stats.revenue_change }}%</span>
+            {% endif %}
+            <span class="text-gray-500">· vs {{ stats.yesterday_revenue | money }} yesterday</span>
+          </div>
+        </div>
+        <div class="grid place-items-center w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shrink-0">
+          <i data-lucide="dollar-sign" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 hover-card">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Today's Orders</p>
+          <p class="mt-2 text-2xl font-bold tracking-tight">{{ stats.today_orders }}</p>
+          <div class="mt-2 flex items-center gap-1.5 text-xs">
+            <span class="text-gray-600 dark:text-gray-300 font-semibold">{{ stats.today_items }} items sold</span>
+            <span class="text-gray-500">· {{ stats.week_orders }} this week</span>
+          </div>
+        </div>
+        <div class="grid place-items-center w-11 h-11 rounded-xl bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 shrink-0">
+          <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 hover-card">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Inventory Value</p>
+          <p class="mt-2 text-2xl font-bold tracking-tight">{{ stats.inventory_value | money }}</p>
+          <div class="mt-2 flex items-center gap-1.5 text-xs">
+            <span class="text-gray-600 dark:text-gray-300 font-semibold">{{ stats.active_products }}/{{ stats.total_products }} active</span>
+            <span class="text-gray-500">· at cost</span>
+          </div>
+        </div>
+        <div class="grid place-items-center w-11 h-11 rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 shrink-0">
+          <i data-lucide="package" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 hover-card">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Low Stock Alerts</p>
+          <p class="mt-2 text-2xl font-bold tracking-tight">{{ stats.low_stock_count }}</p>
+          <div class="mt-2 flex items-center gap-1.5 text-xs">
+            {% if stats.low_stock_count > 0 %}
+              <i data-lucide="trending-down" class="w-3.5 h-3.5 text-red-600"></i>
+              <span class="text-red-600 font-semibold">Needs restocking</span>
+            {% else %}
+              <span class="text-emerald-600 font-semibold">All healthy</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="grid place-items-center w-11 h-11 rounded-xl bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 shrink-0">
+          <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Date filter -->
+  <form method="GET" class="flex flex-wrap items-end gap-3">
+    <div><label class="text-[11px] font-medium text-gray-500 block mb-1">From</label><input type="date" name="date_from" value="{{ date_from }}" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:border-primary-500 focus:outline-none" /></div>
+    <div><label class="text-[11px] font-medium text-gray-500 block mb-1">To</label><input type="date" name="date_to" value="{{ date_to }}" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:border-primary-500 focus:outline-none" /></div>
+    <button type="submit" class="h-9 px-4 rounded-md bg-primary-500 text-white text-xs font-medium hover:bg-primary-600">Filter</button>
+    <a href="/" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center">Reset</a>
+  </form>
+
+  <!-- Charts row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h3 class="font-semibold text-base">Revenue Over Time</h3>
+          <p class="text-xs text-gray-500">{{ date_from }} to {{ date_to }} · {{ stats.period_revenue | money }} · {{ stats.period_orders }} orders</p>
+        </div>
+      </div>
+      <div class="h-72"><canvas id="revenueChart"></canvas></div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-1">Sales by Category</h3>
+      <p class="text-xs text-gray-500 mb-2">{{ date_from }} to {{ date_to }}</p>
+      <div class="h-52"><canvas id="categoryChart"></canvas></div>
+      <div class="space-y-1.5 mt-3">
+        {% for c in category_breakdown[:4] %}
+        <div class="flex items-center gap-2 text-xs">
+          <div class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {{ c.color }}"></div>
+          <span class="text-gray-500 truncate flex-1">{{ c.name }}</span>
+          <span class="font-semibold tabular-nums">{{ c.revenue | money }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Hourly + Top products + Payment -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-1">Today's Hourly Sales</h3>
+      <p class="text-xs text-gray-500 mb-3">{{ stats.today_orders }} orders · {{ stats.today_items }} items</p>
+      <div class="h-64"><canvas id="hourlyChart"></canvas></div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-1">Top Products</h3>
+      <p class="text-xs text-gray-500 mb-3">By revenue · {{ date_from }} to {{ date_to }}</p>
+      <div class="space-y-3 max-h-72 overflow-y-auto pos-scroll">
+        {% if not top_products %}
+        <p class="text-sm text-gray-400 py-8 text-center">No sales yet</p>
+        {% endif %}
+        {% for p in top_products %}
+        <div class="flex items-center gap-3">
+          <div class="grid place-items-center w-7 h-7 rounded-lg bg-primary-100 text-primary-700 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold text-xs shrink-0">{{ loop.index }}</div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium truncate">{{ p.name }}</p>
+            <p class="text-[11px] text-gray-500">{{ p.category }} · {{ p.quantity }} sold</p>
+          </div>
+          <p class="text-sm font-semibold tabular-nums shrink-0">{{ p.revenue | money }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+      <h3 class="font-semibold text-base mb-3">Payment Methods</h3>
+      <p class="text-xs text-gray-500 mb-2">{{ date_from }} to {{ date_to }}</p>
+      <div class="space-y-3">
+        {% if not payment_breakdown %}
+        <p class="text-sm text-gray-400 py-8 text-center">No payments yet</p>
+        {% endif %}
+        {% for p in payment_breakdown %}
+        {% set pct = (p.total / stats.period_revenue * 100) if stats.period_revenue > 0 else 0 %}
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2">
+            <div class="grid place-items-center w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800">
+              {% if p.payment_method == 'cash' %}<i data-lucide="banknote" class="w-4 h-4"></i>
+              {% elif p.payment_method == 'card' %}<i data-lucide="credit-card" class="w-4 h-4"></i>
+              {% else %}<i data-lucide="wallet" class="w-4 h-4"></i>{% endif %}
+            </div>
+            <div class="flex-1 flex items-center justify-between">
+              <span class="text-sm font-medium capitalize">{{ p.payment_method }}</span>
+              <span class="text-sm font-semibold tabular-nums">{{ p.total | money }}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-gray-500">
+            <div class="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+              <div class="h-full bg-primary-500 rounded-full" style="width: {{ pct }}%"></div>
+            </div>
+            <span class="tabular-nums">{{ p.count }} · {{ pct | round(0) | int }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent orders + low stock -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div class="flex items-center justify-between p-5 pb-3">
+        <div>
+          <h3 class="font-semibold text-base">Recent Orders</h3>
+          <p class="text-xs text-gray-500">Latest transactions</p>
+        </div>
+        <a href="/orders" class="text-xs text-primary-600 hover:underline">View all →</a>
+      </div>
+      <div class="px-5 pb-2 grid grid-cols-12 gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-gray-100 dark:border-gray-800 pb-2">
+        <div class="col-span-3">Order #</div>
+        <div class="col-span-4">Customer</div>
+        <div class="col-span-2">Payment</div>
+        <div class="col-span-2 text-right">Total</div>
+        <div class="col-span-1 text-right">When</div>
+      </div>
+      <div class="divide-y divide-gray-50 dark:divide-gray-800 max-h-72 overflow-y-auto pos-scroll">
+        {% for o in recent_orders %}
+        <div class="px-5 py-3 grid grid-cols-12 gap-2 items-center text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer" onclick="viewOrder('{{ o.id }}')">
+          <div class="col-span-3 font-mono text-xs">{{ o.order_number }}</div>
+          <div class="col-span-4 truncate font-medium">{{ o.customer_name }}</div>
+          <div class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] border border-gray-200 dark:border-gray-700 capitalize">{{ o.payment_method }}</span></div>
+          <div class="col-span-2 text-right font-semibold tabular-nums">{{ o.total | money }}</div>
+          <div class="col-span-1 text-right text-[11px] text-gray-500">{{ o.created_at | time_ago }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div class="flex items-center justify-between p-5 pb-3">
+        <div>
+          <h3 class="font-semibold text-base flex items-center gap-2"><i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500"></i> Low Stock</h3>
+          <p class="text-xs text-gray-500">{{ stats.low_stock_count }} items need attention</p>
+        </div>
+        <a href="/inventory" class="text-xs text-primary-600 hover:underline">Manage →</a>
+      </div>
+      <div class="divide-y divide-gray-50 dark:divide-gray-800 max-h-72 overflow-y-auto pos-scroll">
+        {% if not low_stock %}
+        <p class="text-sm text-gray-400 py-8 text-center">All stock levels healthy</p>
+        {% endif %}
+        {% for p in low_stock %}
+        <div class="px-5 py-3 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm font-medium truncate">{{ p.name }}</p>
+            <p class="text-[11px] text-gray-500">{{ p.sku }} · {{ p.category.name if p.category else '—' }}</p>
+          </div>
+          <span class="text-[10px] font-medium px-2 py-1 rounded-full {% if p.stock == 0 %}bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300{% else %}bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300{% endif %} whitespace-nowrap">
+            {{ p.stock }} / {{ p.low_stock_threshold }} {{ p.unit }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Order detail modal -->
+<div id="orderModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
+    <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
+      <h3 class="font-semibold text-lg flex items-center gap-2"><i data-lucide="receipt" class="w-5 h-5"></i> Order Details</h3>
+      <button onclick="closeOrderModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <div id="orderModalBody" class="p-5"></div>
+  </div>
+</div>
+
+<script>
+const symbol = "{{ settings.currency_symbol }}";
+
+// Revenue area chart
+const revCtx = document.getElementById('revenueChart');
+const dailySales = {{ daily_sales | tojson }};
+new Chart(revCtx, {
+  type: 'line',
+  data: {
+    labels: dailySales.map(d => d.label),
+    datasets: [{
+      label: 'Revenue',
+      data: dailySales.map(d => d.sales),
+      borderColor: '#10b981',
+      backgroundColor: 'rgba(16, 185, 129, 0.15)',
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { ticks: { callback: v => symbol + v } },
+    },
+  },
+});
+
+// Category pie chart
+const catCtx = document.getElementById('categoryChart');
+const catData = {{ category_breakdown | tojson }};
+new Chart(catCtx, {
+  type: 'doughnut',
+  data: {
+    labels: catData.map(c => c.name),
+    datasets: [{
+      data: catData.map(c => c.revenue),
+      backgroundColor: catData.map(c => c.color),
+      borderWidth: 2,
+      borderColor: 'rgba(255, 255, 255, 1)',
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '60%',
+    plugins: { legend: { display: false } },
+  },
+});
+
+// Hourly bar chart
+const hourCtx = document.getElementById('hourlyChart');
+const hourData = {{ hourly_data | tojson }};
+new Chart(hourCtx, {
+  type: 'bar',
+  data: {
+    labels: hourData.map(d => d.hour),
+    datasets: [{
+      label: 'Sales',
+      data: hourData.map(d => d.sales),
+      backgroundColor: '#10b981',
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { ticks: { callback: v => symbol + v } },
+      x: { ticks: { maxRotation: 45, minRotation: 45 } },
+    },
+  },
+});
+
+// Order modal
+async function viewOrder(orderId) {
+  const res = await fetch('/orders/' + orderId);
+  const order = await res.json();
+  const body = document.getElementById('orderModalBody');
+  body.innerHTML = `
+    <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+      <div><p class="text-xs text-gray-500">Order #</p><p class="font-mono font-medium">${order.order_number}</p></div>
+      <div><p class="text-xs text-gray-500">Date</p><p class="font-medium">${new Date(order.created_at).toLocaleString()}</p></div>
+      <div><p class="text-xs text-gray-500">Customer</p><p class="font-medium">${order.customer_name}</p></div>
+      <div><p class="text-xs text-gray-500">Cashier</p><p class="font-medium">${order.cashier_name}</p></div>
+      <div><p class="text-xs text-gray-500">Payment</p><p class="font-medium capitalize">${order.payment_method}</p></div>
+    </div>
+    <div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden mb-4">
+      ${order.items.map(i => `
+        <div class="flex items-center gap-3 px-3 py-2 border-b border-gray-100 dark:border-gray-800 last:border-0">
+          <div class="grid place-items-center w-8 h-8 rounded-md bg-gray-100 dark:bg-gray-800 text-xs font-bold">${i.quantity}×</div>
+          <div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">${i.name}</p></div>
+          <div class="text-right"><p class="text-xs text-gray-500">${symbol}${i.price.toFixed(2)} ea</p><p class="text-sm font-semibold tabular-nums">${symbol}${i.subtotal.toFixed(2)}</p></div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-1.5 text-sm">
+      <div class="flex justify-between"><span class="text-gray-500">Subtotal</span><span class="tabular-nums">${symbol}${order.subtotal.toFixed(2)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Tax (${order.tax_rate}%)</span><span class="tabular-nums">${symbol}${order.tax.toFixed(2)}</span></div>
+      ${order.discount > 0 ? `<div class="flex justify-between"><span class="text-gray-500">Discount</span><span class="text-red-600 tabular-nums">-${symbol}${order.discount.toFixed(2)}</span></div>` : ''}
+      <div class="flex justify-between font-bold text-base pt-2 border-t border-gray-200 dark:border-gray-700"><span>Total</span><span class="text-primary-600 tabular-nums">${symbol}${order.total.toFixed(2)}</span></div>
+    </div>
+  `;
+  document.getElementById('orderModal').classList.remove('hidden');
+  document.getElementById('orderModal').classList.add('flex');
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeOrderModal() {
+  document.getElementById('orderModal').classList.add('hidden');
+  document.getElementById('orderModal').classList.remove('flex');
+}
+</script>
+{% endblock %}

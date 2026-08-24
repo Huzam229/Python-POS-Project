@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Customers{% endblock %}
+{% block page_title %}Customers{% endblock %}
+{% block page_subtitle %}CRM & loyalty points{% endblock %}
+
+{% block content %}
+<div class="p-6 space-y-5 pos-view-enter">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shrink-0"><i data-lucide="user" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Total Customers</p><p class="text-xl font-bold">{{ real_count }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 shrink-0"><i data-lucide="award" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Loyalty Points</p><p class="text-xl font-bold tabular-nums">{{ total_loyalty | int }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 shrink-0"><i data-lucide="dollar-sign" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Total Spent</p><p class="text-xl font-bold">{{ total_spent | money }}</p></div></div>
+    <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4 flex items-center gap-3"><div class="grid place-items-center w-10 h-10 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 shrink-0"><i data-lucide="shopping-bag" class="w-5 h-5"></i></div><div><p class="text-xs text-gray-500">Avg Lifetime Value</p><p class="text-xl font-bold">{{ avg_spent | money }}</p></div></div>
+  </div>
+
+  <form method="GET" class="flex flex-wrap items-center gap-3">
+    <div class="relative flex-1 min-w-64">
+      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
+      <input name="search" value="{{ search }}" placeholder="Search customers by name, email, or phone..." class="w-full pl-9 h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm focus:border-primary-500 focus:outline-none" />
+    </div>
+    <a href="?search={{ search }}&export=csv" target="_blank" class="flex items-center gap-1.5 h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium"><i data-lucide="download" class="w-4 h-4"></i> Export CSV</a>
+    <button onclick="openCustomerModal()" type="button" class="ml-auto flex items-center gap-1.5 h-9 px-4 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium"><i data-lucide="plus" class="w-4 h-4"></i> Add Customer</button>
+  </form>
+
+  <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+    <div class="overflow-x-auto pos-scroll max-h-[calc(100vh-340px)]">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 dark:bg-gray-800/50 sticky top-0">
+          <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            <th class="px-4 py-3 w-72">Customer</th>
+            <th class="px-4 py-3">Contact</th>
+            <th class="px-4 py-3">Address</th>
+            <th class="px-4 py-3 text-center">Tier</th>
+            <th class="px-4 py-3 text-right">Orders</th>
+            <th class="px-4 py-3 text-right">Total Spent</th>
+            <th class="px-4 py-3 text-right">Points</th>
+            <th class="px-4 py-3">Joined</th>
+            <th class="px-4 py-3 w-20"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+          {% if not customers %}
+          <tr><td colspan="9" class="text-center text-gray-400 py-12">No customers found</td></tr>
+          {% endif %}
+          {% for c in customers %}
+          <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-full grid place-items-center text-xs font-semibold text-white" style="background: {{ c.loyalty_points | tier_color }}">{{ c.name[:2] | upper }}</div>
+                <div class="min-w-0"><p class="font-medium truncate">{{ c.name }}</p>{% if c.note %}<p class="text-[11px] text-gray-500 truncate">{{ c.note }}</p>{% endif %}</div>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <div class="space-y-0.5">
+                {% if c.phone %}<div class="flex items-center gap-1.5 text-xs"><i data-lucide="phone" class="w-3 h-3 text-gray-400"></i><span class="tabular-nums">{{ c.phone }}</span></div>{% endif %}
+                {% if c.email %}<div class="flex items-center gap-1.5 text-xs"><i data-lucide="mail" class="w-3 h-3 text-gray-400"></i><span class="truncate">{{ c.email }}</span></div>{% endif %}
+                {% if not c.phone and not c.email %}<span class="text-xs text-gray-400">—</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-3">{% if c.address %}<div class="flex items-center gap-1.5 text-xs"><i data-lucide="map-pin" class="w-3 h-3 text-gray-400 shrink-0"></i><span class="truncate max-w-40">{{ c.address }}</span></div>{% else %}<span class="text-xs text-gray-400">—</span>{% endif %}</td>
+            <td class="px-4 py-3 text-center"><span class="inline-flex items-center px-2 py-1 rounded text-[10px] text-white {{ c.loyalty_points | tier_color }}"><i data-lucide="star" class="w-2.5 h-2.5 mr-1"></i>{{ c.loyalty_points | tier }}</span></td>
+            <td class="px-4 py-3 text-right tabular-nums text-sm">{{ c.orders_count }}</td>
+            <td class="px-4 py-3 text-right font-medium tabular-nums">{{ c.total_spent | money }}</td>
+            <td class="px-4 py-3 text-right"><span class="font-semibold tabular-nums text-amber-600">{{ c.loyalty_points | int }}</span></td>
+            <td class="px-4 py-3 text-xs text-gray-500">{{ c.created_at | date_short }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-1">
+                <button onclick='openCustomerModal({{ c | tojson }})' class="grid place-items-center w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                {% if c.name != "Walk-in Customer" %}
+                <form method="POST" action="/customers/{{ c.id }}/delete" onsubmit="return confirm('Delete {{ c.name | e }}?')"><button type="submit" class="grid place-items-center w-8 h-8 rounded hover:bg-red-50 text-red-600"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="customerModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4 modal-overlay">
+  <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
+    <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
+      <h3 class="font-semibold text-lg" id="custModalTitle">Add New Customer</h3>
+      <button onclick="closeCustomerModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+    <form id="custForm" method="POST" action="/customers/new" class="p-5 space-y-4">
+      <div><label class="text-xs font-medium block mb-1">Name *</label><input name="name" id="c_name" required class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
+      <div class="grid grid-cols-2 gap-4">
+        <div><label class="text-xs font-medium block mb-1">Phone</label><input name="phone" id="c_phone" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
+        <div><label class="text-xs font-medium block mb-1">Email</label><input name="email" type="email" id="c_email" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
+      </div>
+      <div><label class="text-xs font-medium block mb-1">Address</label><input name="address" id="c_address" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
+      <div><label class="text-xs font-medium block mb-1">Loyalty Points</label><input name="loyalty_points" type="number" min="0" id="c_points" value="0" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
+      <div><label class="text-xs font-medium block mb-1">Note</label><textarea name="note" id="c_note" rows="2" class="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm"></textarea></div>
+    </form>
+    <div class="flex gap-2 p-5 pt-0">
+      <button onclick="closeCustomerModal()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium">Cancel</button>
+      <button onclick="document.getElementById('custForm').submit()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openCustomerModal(customer) {
+  const form = document.getElementById('custForm');
+  if (customer) {
+    document.getElementById('custModalTitle').textContent = 'Edit Customer';
+    form.action = '/customers/' + customer.id + '/edit';
+    document.getElementById('c_name').value = customer.name;
+    document.getElementById('c_phone').value = customer.phone || '';
+    document.getElementById('c_email').value = customer.email || '';
+    document.getElementById('c_address').value = customer.address || '';
+    document.getElementById('c_points').value = customer.loyalty_points;
+    document.getElementById('c_note').value = customer.note || '';
+  } else {
+    document.getElementById('custModalTitle').textContent = 'Add New Customer';
+    form.action = '/customers/new';
+    form.reset();
+    document.getElementById('c_points').value = 0;
+  }
+  document.getElementById('customerModal').classList.remove('hidden');
+  document.getElementById('customerModal').classList.add('flex');
+}
+function closeCustomerModal() {
+  document.getElementById('customerModal').classList.add('hidden');
+  document.getElementById('customerModal').classList.remove('flex');
+}
+</script>
+{% endblock %}

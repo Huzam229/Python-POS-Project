@@ -1,0 +1,92 @@
+/* QuickPOS custom styles */
+
+/* Custom scrollbar */
+.pos-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.pos-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pos-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.4);
+  border-radius: 4px;
+}
+.pos-scroll::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}
+
+/* View enter animation */
+.pos-view-enter {
+  animation: pos-view-fade 0.25s ease-out;
+}
+@keyframes pos-view-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide-in for flash messages */
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Modal animations */
+.modal-overlay {
+  animation: fade-in 0.2s ease-out;
+}
+.modal-content {
+  animation: modal-pop 0.25s ease-out;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-pop {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Hover card */
+.hover-card {
+  transition: all 0.2s ease;
+}
+.hover-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(16, 185, 129, 0.3);
+}
+
+/* Tabular numbers */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Receipt font */
+.font-mono-receipt {
+  font-family: 'Courier New', monospace;
+}
+
+/* Hide number input arrows */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
