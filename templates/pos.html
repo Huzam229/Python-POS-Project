@@ -11,21 +11,21 @@
       <div class="relative mb-2">
         <i data-lucide="scan" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary-500 pointer-events-none"></i>
         <input id="barcodeInput" placeholder="Scan barcode..."
-          class="w-full pl-9 pr-4 h-10 rounded-md border-2 border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-sm font-mono focus:border-primary-500 focus:outline-none placeholder:text-gray-400" />
+          class="w-full pl-9 pr-4 h-10 rounded-md border-2 border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 text-sm font-mono text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:outline-none placeholder:text-gray-500 dark:placeholder:text-gray-400" />
       </div>
       <div class="relative mb-3">
         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
         <input id="productSearch" oninput="filterProducts()" placeholder="Search products by name, SKU or barcode..."
-          class="w-full pl-9 pr-4 h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm focus:border-primary-500 focus:outline-none" />
+          class="w-full pl-9 pr-4 h-10 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:outline-none placeholder:text-gray-500 dark:placeholder:text-gray-400" />
       </div>
-      <div class="flex items-center gap-2 overflow-x-auto pos-scroll pb-1" id="categoryTabs">
-        <button onclick="setCategory('all')" data-cat="all"
-          class="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-500 text-white">All <span class="text-[10px] rounded-full px-1.5 py-0.5 bg-white/20">{{ products | length }}</span></button>
+      <div class="flex items-center gap-2 overflow-x-auto pos-scroll pb-2" id="categoryTabs">
+        <button type="button" onclick="setCategory('all')" data-cat="all"
+          class="cat-chip is-active shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium">All <span>{{ products | length }}</span></button>
         {% for c in categories %}
-        <button onclick="setCategory('{{ c.id }}')" data-cat="{{ c.id }}"
-          class="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50">
+        <button type="button" onclick="setCategory('{{ c.id }}')" data-cat="{{ c.id }}"
+          class="cat-chip shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium">
           {{ c.name }}
-          <span class="text-[10px] rounded-full px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700">{{ products | selectattr('category_id', 'equalto', c.id) | list | length }}</span>
+          <span>{{ products | selectattr('category_id', 'equalto', c.id) | list | length }}</span>
         </button>
         {% endfor %}
       </div>
@@ -44,17 +44,17 @@
           data-product-cost="{{ p.cost }}"
           data-product-stock="{{ p.stock }}"
           {% if p.stock <= 0 %}disabled{% endif %}
-          class="product-btn group relative text-left rounded-xl border bg-white dark:bg-gray-900 hover:border-primary-500 hover:shadow-md transition-all overflow-hidden
+          class="product-btn group relative text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 hover:border-primary-500 hover:shadow-md transition-all overflow-hidden
           {% if p.stock <= 0 %}opacity-50 cursor-not-allowed{% endif %}">
           <div class="pointer-events-none h-20 relative grid place-items-center" style="background: linear-gradient(135deg, {{ p.category_color }}22, {{ p.category_color }}11)">
             <span class="text-2xl font-bold opacity-70" style="color: {{ p.category_color }}">{{ p.name[:2] | upper }}</span>
             {% if p.stock <= 0 %}<span class="absolute top-1.5 left-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Out</span>{% endif %}
           </div>
           <div class="pointer-events-none p-2.5">
-            <p class="text-xs font-medium line-clamp-2 leading-tight min-h-[2rem]">{{ p.name }}</p>
+            <p class="text-xs font-medium text-gray-900 dark:text-gray-100 line-clamp-2 leading-tight min-h-[2rem]">{{ p.name }}</p>
             <div class="mt-1.5 flex items-center justify-between">
-              <span class="text-sm font-bold text-primary-600">{{ p.price | money }}</span>
-              <span class="text-[10px] text-gray-500 tabular-nums">{{ p.stock }} {{ p.unit }}</span>
+              <span class="text-sm font-bold text-primary-700 dark:text-primary-400">{{ p.price | money }}</span>
+              <span class="text-[10px] text-gray-600 dark:text-gray-400 tabular-nums">{{ p.stock }} {{ p.unit }}</span>
             </div>
           </div>
         </button>
@@ -68,8 +68,8 @@
     <div class="px-4 h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between shrink-0">
       <div class="flex items-center gap-2">
         <i data-lucide="shopping-cart" class="w-4 h-4"></i>
-        <span class="font-semibold text-sm">Current Sale</span>
-        <span id="cartCount" class="hidden text-[10px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">0 items</span>
+        <span class="font-semibold text-sm text-gray-900 dark:text-gray-100">Current Sale</span>
+        <span id="cartCount" class="hidden text-[10px] bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded-full">0 items</span>
       </div>
       <button onclick="clearCart()" id="clearBtn" class="hidden text-xs text-red-600 hover:text-red-700 font-medium">Clear</button>
     </div>
@@ -90,10 +90,10 @@
 
     <div class="flex-1 overflow-y-auto pos-scroll">
       <div id="cart" class="p-4 space-y-2 min-h-full">
-        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-400 py-16">
+        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-500 dark:text-gray-400 py-16">
           <div>
             <i data-lucide="shopping-cart" class="w-10 h-10 mx-auto mb-2 opacity-30"></i>
-            <p class="text-sm font-medium">Empty cart</p>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Empty cart</p>
             <p class="text-xs mt-1">Tap products to start a sale</p>
           </div>
         </div>
@@ -111,8 +111,8 @@
         </div>
         <div class="border-t border-gray-200 dark:border-gray-700 my-1.5"></div>
         <div class="flex items-center justify-between">
-          <span class="font-semibold">Total</span>
-          <span id="total" class="text-xl font-bold tabular-nums text-primary-600">{{ 0 | money }}</span>
+          <span class="font-semibold text-gray-900 dark:text-gray-100">Total</span>
+          <span id="total" class="text-xl font-bold tabular-nums text-primary-700 dark:text-primary-400">{{ 0 | money }}</span>
         </div>
       </div>
       <div class="px-4 pb-4">
@@ -131,7 +131,7 @@
   <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-md w-full modal-content">
     <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
       <h3 class="font-semibold text-lg">Complete Payment</h3>
-      <button onclick="closeCheckout()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <button onclick="closeCheckout()" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
     </div>
     <div class="p-5 space-y-4">
       <div class="grid grid-cols-3 gap-2">
@@ -153,7 +153,7 @@
       </div>
 
       <div id="cashSection" class="space-y-2">
-        <label class="text-xs font-medium text-gray-600">Cash Received</label>
+        <label class="text-xs font-medium text-gray-600 dark:text-gray-300">Cash Received</label>
         <input id="paidAmount" type="number" min="0" step="0.01" oninput="updateChange()"
           class="w-full text-lg font-semibold h-12 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 focus:border-primary-500 focus:outline-none" />
         <div id="changeRow" class="hidden flex justify-between bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-3 py-2 text-sm">
@@ -182,7 +182,7 @@
     </div>
     <div id="receiptBody" class="px-5 pb-5"></div>
     <div class="flex gap-2 px-5 pb-5">
-      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button>
+      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="printer" class="w-4 h-4"></i> Print</button>
       <button onclick="closeReceipt()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">New Sale</button>
     </div>
   </div>

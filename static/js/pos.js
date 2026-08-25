@@ -109,10 +109,10 @@ function renderCart() {
 
   if (cart.length === 0) {
     cartEl.innerHTML = `
-        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-400 py-16">
+        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-500 dark:text-gray-400 py-16">
           <div>
             <i data-lucide="shopping-cart" class="w-10 h-10 mx-auto mb-2 opacity-30"></i>
-            <p class="text-sm font-medium">Empty cart</p>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Empty cart</p>
             <p class="text-xs mt-1">Tap products to start a sale</p>
           </div>
         </div>`;
@@ -125,18 +125,18 @@ function renderCart() {
     chargeBtn.disabled = false;
 
     cartEl.innerHTML = cart.map(item => `
-      <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+      <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-gray-900 dark:text-gray-100">
         <div class="flex-1 min-w-0">
-          <p class="text-xs font-medium truncate">${item.name}</p>
-          <p class="text-[10px] text-gray-500">${(window.currencySymbol || '')}${item.price.toFixed(2)} · ${item.stock} in stock</p>
+          <p class="text-xs font-medium truncate text-gray-900 dark:text-gray-100">${item.name}</p>
+          <p class="text-[10px] text-gray-600 dark:text-gray-400">${(window.currencySymbol || '')}${item.price.toFixed(2)} · ${item.stock} in stock</p>
         </div>
         <div class="flex items-center gap-1">
-          <button onclick="updateQuantity('${item.productId}', ${item.quantity - 1})" class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700"><i data-lucide="minus" class="w-3 h-3"></i></button>
-          <input type="number" value="${item.quantity}" onchange="updateQuantity('${item.productId}', this.value)" class="w-10 h-6 text-center text-xs p-0 tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800" />
-          <button onclick="updateQuantity('${item.productId}', ${item.quantity + 1})" ${item.quantity >= item.stock ? 'disabled' : ''} class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30"><i data-lucide="plus" class="w-3 h-3"></i></button>
+          <button onclick="updateQuantity('${item.productId}', ${item.quantity - 1})" class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700"><i data-lucide="minus" class="w-3 h-3"></i></button>
+          <input type="number" value="${item.quantity}" onchange="updateQuantity('${item.productId}', this.value)" class="w-10 h-6 text-center text-xs p-0 tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+          <button onclick="updateQuantity('${item.productId}', ${item.quantity + 1})" ${item.quantity >= item.stock ? 'disabled' : ''} class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30"><i data-lucide="plus" class="w-3 h-3"></i></button>
         </div>
         <div class="w-16 text-right shrink-0">
-          <p class="text-xs font-semibold tabular-nums">${(window.currencySymbol || '')}${(item.price * item.quantity).toFixed(2)}</p>
+          <p class="text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">${(window.currencySymbol || '')}${(item.price * item.quantity).toFixed(2)}</p>
         </div>
         <button onclick="removeFromCart('${item.productId}')" class="text-gray-400 hover:text-red-600 shrink-0"><i data-lucide="x" class="w-3 h-3"></i></button>
       </div>
@@ -255,13 +255,7 @@ if (document.getElementById('productGrid')) {
 
 function setCategory(catId) {
   document.querySelectorAll('#categoryTabs button').forEach(btn => {
-    if (btn.dataset.cat === catId) {
-      btn.classList.add('bg-primary-500', 'text-white');
-      btn.classList.remove('bg-white', 'dark:bg-gray-800', 'border', 'border-gray-200', 'dark:border-gray-700', 'text-gray-600', 'dark:text-gray-300');
-    } else {
-      btn.classList.remove('bg-primary-500', 'text-white');
-      btn.classList.add('bg-white', 'dark:bg-gray-800', 'border', 'border-gray-200', 'dark:border-gray-700', 'text-gray-600', 'dark:text-gray-300');
-    }
+    btn.classList.toggle('is-active', btn.dataset.cat === catId);
   });
 
   document.querySelectorAll('#productGrid button').forEach(btn => {

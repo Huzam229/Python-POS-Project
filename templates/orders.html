@@ -75,11 +75,11 @@
   <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
     <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
       <h3 class="font-semibold text-lg flex items-center gap-2"><i data-lucide="receipt" class="w-5 h-5"></i> Order Details</h3>
-      <button onclick="closeOrderModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <button onclick="closeOrderModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
     </div>
     <div id="orderModalBody" class="p-5"></div>
     <div class="flex gap-2 p-5 pt-0">
-      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="download" class="w-4 h-4"></i> Print Receipt</button>
+      <button onclick="window.print()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium flex items-center justify-center gap-1"><i data-lucide="download" class="w-4 h-4"></i> Print Receipt</button>
       <button onclick="closeOrderModal()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Close</button>
     </div>
   </div>

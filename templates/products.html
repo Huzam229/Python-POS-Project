@@ -29,7 +29,7 @@
   <div class="border-b border-gray-200 dark:border-gray-800">
     <nav class="flex gap-4">
       <button onclick="setTab('products')" id="tab-products" class="py-2 px-1 text-sm font-medium border-b-2 border-primary-500 text-primary-600">Products</button>
-      <button onclick="setTab('categories')" id="tab-categories" class="py-2 px-1 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">Categories</button>
+      <button onclick="setTab('categories')" id="tab-categories" class="py-2 px-1 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">Categories</button>
     </nav>
   </div>
 
@@ -137,7 +137,7 @@
   <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
     <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
       <h3 class="font-semibold text-lg" id="productModalTitle">Add New Product</h3>
-      <button onclick="closeProductModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <button onclick="closeProductModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
     </div>
     <form id="productForm" method="POST" action="/products/new" class="p-5 space-y-4">
       <input type="hidden" name="product_id" id="f_id" />
@@ -169,10 +169,10 @@ function setTab(tab) {
     const tabBtn = document.getElementById('tab-' + t);
     if (t === tab) {
       tabBtn.classList.add('border-primary-500', 'text-primary-600');
-      tabBtn.classList.remove('border-transparent', 'text-gray-500');
+      tabBtn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
     } else {
       tabBtn.classList.remove('border-primary-500', 'text-primary-600');
-      tabBtn.classList.add('border-transparent', 'text-gray-500');
+      tabBtn.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
     }
   });
 }

@@ -9,10 +9,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="{{ url_for('static', filename='vendor/lucide.min.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <style>body{font-family:'Inter',system-ui,sans-serif}</style>
   <script>(function(){const t=localStorage.getItem('quickpos-theme')||'light';if(t==='dark')document.documentElement.classList.add('dark')})();</script>
 </head>
-<body class="bg-gray-50 dark:bg-gray-950 min-h-screen flex items-center justify-center p-4">
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen flex items-center justify-center p-4">
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-emerald-600 text-white shadow-lg mb-4"><i data-lucide="store" class="w-7 h-7"></i></div>

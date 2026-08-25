@@ -173,10 +173,15 @@
     if (window.lucide) lucide.createIcons();
 
     // Theme toggle
-    function toggleTheme() {
-      const isDark = document.documentElement.classList.toggle('dark');
+    window.toggleTheme = function toggleTheme() {
+      document.documentElement.classList.toggle('dark');
+      var isDark = document.documentElement.classList.contains('dark');
       localStorage.setItem('quickpos-theme', isDark ? 'dark' : 'light');
-    }
+      requestAnimationFrame(function () {
+        if (typeof window.qpApplyChartTheme === 'function') window.qpApplyChartTheme();
+        if (window.lucide) lucide.createIcons();
+      });
+    };
 
     // Live clock
     function updateClock() {

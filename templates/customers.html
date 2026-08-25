@@ -82,7 +82,7 @@
   <div class="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto pos-scroll modal-content">
     <div class="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-800">
       <h3 class="font-semibold text-lg" id="custModalTitle">Add New Customer</h3>
-      <button onclick="closeCustomerModal()" class="text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <button onclick="closeCustomerModal()" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
     </div>
     <form id="custForm" method="POST" action="/customers/new" class="p-5 space-y-4">
       <div><label class="text-xs font-medium block mb-1">Name *</label><input name="name" id="c_name" required class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" /></div>
@@ -95,7 +95,7 @@
       <div><label class="text-xs font-medium block mb-1">Note</label><textarea name="note" id="c_note" rows="2" class="w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5 text-sm"></textarea></div>
     </form>
     <div class="flex gap-2 p-5 pt-0">
-      <button onclick="closeCustomerModal()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 text-sm font-medium">Cancel</button>
+      <button onclick="closeCustomerModal()" class="flex-1 h-10 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium">Cancel</button>
       <button onclick="document.getElementById('custForm').submit()" class="flex-1 h-10 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-semibold">Save</button>
     </div>
   </div>
