@@ -88,10 +88,31 @@ def init_db():
             updated_at TEXT DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'cashier',
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL,
+            otp TEXT NOT NULL,
+            otp_expires_at TEXT NOT NULL,
+            used INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS orders (
             id TEXT PRIMARY KEY,
             order_number TEXT UNIQUE NOT NULL,
             customer_id TEXT,
+            user_id TEXT,
             cashier_name TEXT DEFAULT 'Cashier',
             subtotal REAL NOT NULL,
             tax_rate REAL DEFAULT 0,
@@ -103,7 +124,8 @@ def init_db():
             status TEXT DEFAULT 'completed',
             note TEXT,
             created_at TEXT DEFAULT (datetime('now')),
-            FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
+            FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS order_items (
@@ -126,31 +148,11 @@ def init_db():
             phone TEXT DEFAULT '+1 555 0100',
             email TEXT DEFAULT 'store@quickpos.com',
             tax_rate REAL DEFAULT 8,
-            currency TEXT DEFAULT 'USD',
-            currency_symbol TEXT DEFAULT '$',
+            currency TEXT DEFAULT 'PKR',
+            currency_symbol TEXT DEFAULT 'Rs',
             receipt_footer TEXT DEFAULT 'Thank you for shopping with us!',
             low_stock_alert_enabled INTEGER DEFAULT 1,
             updated_at TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT DEFAULT 'cashier',
-            is_active INTEGER DEFAULT 1,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS password_resets (
-            id TEXT PRIMARY KEY,
-            email TEXT NOT NULL,
-            otp TEXT NOT NULL,
-            otp_expires_at TEXT NOT NULL,
-            used INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now'))
         );
 
         CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
@@ -168,6 +170,37 @@ def init_db():
             execute(f"ALTER TABLE settings ADD COLUMN {col} TEXT")
         except Exception:
             pass
+
+    # Existing shops still on the original USD factory default switch to PKR once.
+    # A store that already chose another currency is left alone.
+    try:
+        execute(
+            "UPDATE settings SET currency = 'PKR', currency_symbol = 'Rs' "
+            "WHERE currency = 'USD' AND currency_symbol = '$'"
+        )
+    except Exception:
+        pass
+
+    # Existing DBs: attach the selling user to each order.
+    try:
+        execute("ALTER TABLE orders ADD COLUMN user_id TEXT")
+    except Exception:
+        pass
+    try:
+        execute("CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id)")
+    except Exception:
+        pass
+
+    # Remove the seed demo cashier — sales belong to real user accounts.
+    try:
+        demo = query_one(
+            "SELECT id FROM users WHERE email = ?",
+            ("cashier@quickpos.com",),
+        )
+        if demo:
+            execute("DELETE FROM users WHERE id = ?", (demo["id"],))
+    except Exception:
+        pass
 
 
 # ---- Query helpers ----
@@ -202,8 +235,8 @@ def get_settings():
     if not s:
         import uuid
         execute(
-            "INSERT INTO settings (id, store_name) VALUES (?, ?)",
-            (str(uuid.uuid4()), 'QuickPOS Store')
+            "INSERT INTO settings (id, store_name, currency, currency_symbol) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), "QuickPOS Store", "PKR", "Rs"),
         )
         s = query_one("SELECT * FROM settings LIMIT 1")
     if s:

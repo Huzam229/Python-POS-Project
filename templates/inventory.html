@@ -136,7 +136,7 @@
 const symbol = "{{ settings.currency_symbol }}";
 const catDist = {{ category_dist | tojson }};
 
-new Chart(document.getElementById('invChart'), {
+qpChart('invChart', {
   type: 'bar',
   data: {
     labels: catDist.map(c => c.name),

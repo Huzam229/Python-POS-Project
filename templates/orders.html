@@ -17,7 +17,7 @@
     <div><label class="text-[11px] font-medium text-gray-500 block mb-1">To</label><input type="date" name="date_to" value="{{ date_to }}" class="h-9 px-3 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm focus:border-primary-500 focus:outline-none" /></div>
     <div class="relative flex-1 min-w-48">
       <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"></i>
-      <input name="search" value="{{ search }}" placeholder="Search by order number or customer..." class="w-full pl-9 h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm focus:border-primary-500 focus:outline-none" />
+      <input name="search" value="{{ search }}" placeholder="Search by order number, customer or cashier..." class="w-full pl-9 h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-sm focus:border-primary-500 focus:outline-none" />
     </div>
     <div class="flex gap-1.5">
       {% for m in ['all', 'cash', 'card', 'wallet'] %}

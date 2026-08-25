@@ -35,8 +35,13 @@
     <a href="/backup/download" class="flex items-center gap-1.5 h-9 px-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium"><i data-lucide="download" class="w-4 h-4"></i> Download Current DB</a>
     {% if gdrive_connected %}
       <span class="flex items-center gap-1.5 h-9 px-3 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 text-xs font-medium"><i data-lucide="check-circle" class="w-4 h-4"></i> Google Drive Connected</span>
-    {% else %}
+      <form method="POST" action="/backup/disconnect">
+        <button type="submit" class="flex items-center gap-1.5 h-9 px-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium">Disconnect</button>
+      </form>
+    {% elif gdrive_configured %}
       <a href="/backup/auth/google" class="flex items-center gap-1.5 h-9 px-4 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 text-sm font-medium"><i data-lucide="cloud" class="w-4 h-4"></i> Connect to Google Drive</a>
+    {% else %}
+      <a href="/settings" class="flex items-center gap-1.5 h-9 px-4 rounded-md border border-amber-200 text-amber-800 hover:bg-amber-50 text-sm font-medium"><i data-lucide="settings" class="w-4 h-4"></i> Configure Google Drive in Settings</a>
     {% endif %}
   </div>
 
@@ -73,6 +78,9 @@
                   <button type="submit" class="grid place-items-center w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-800" title="Upload to Google Drive"><i data-lucide="cloud-upload" class="w-3.5 h-3.5 text-sky-600"></i></button>
                 </form>
                 {% endif %}
+                <form method="POST" action="/backup/restore/{{ s.name }}" onsubmit="return confirm('Replace the live database with {{ s.name }}? This cannot be undone.')">
+                  <button type="submit" class="grid place-items-center w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-800" title="Restore"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i></button>
+                </form>
                 <form method="POST" action="/backup/delete/{{ s.name }}" onsubmit="return confirm('Delete {{ s.name }}?')">
                   <button type="submit" class="grid place-items-center w-8 h-8 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                 </form>
@@ -103,7 +111,7 @@
             <th class="px-5 py-3">Name</th>
             <th class="px-5 py-3">Size</th>
             <th class="px-5 py-3">Uploaded</th>
-            <th class="px-5 py-3">Drive ID</th>
+            <th class="px-5 py-3 w-24"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -111,8 +119,12 @@
           <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
             <td class="px-5 py-3 font-mono text-xs font-medium flex items-center gap-2"><i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-500"></i> {{ f.name }}</td>
             <td class="px-5 py-3 tabular-nums text-sm">{{ f.size_fmt }}</td>
-            <td class="px-5 py-3 text-sm text-gray-500">{{ f.createdTime[:10] }}</td>
-            <td class="px-5 py-3 text-[10px] font-mono text-gray-400 truncate max-w-32" title="{{ f.id }}">{{ f.id[:20] }}...</td>
+            <td class="px-5 py-3 text-sm text-gray-500">{{ (f.createdTime or '')[:10] }}</td>
+            <td class="px-5 py-3">
+              <form method="POST" action="/backup/drive/download/{{ f.id }}">
+                <button type="submit" class="grid place-items-center w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-800" title="Save to local snapshots"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -126,9 +138,14 @@
   <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-start gap-3 text-sm">
     <i data-lucide="info" class="w-5 h-5 shrink-0 text-amber-600 mt-0.5"></i>
     <div>
-      <p class="font-medium text-amber-800 dark:text-amber-300">Google Drive Setup</p>
-      <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Go to <strong>Settings → Google Drive</strong> section to enter your Client ID and Client Secret. Then click "Connect to Google Drive" above to authorize.</p>
-      <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">You need a Google Cloud project with the Drive API enabled and an OAuth 2.0 Client ID of type "Desktop app".</p>
+      <p class="font-medium text-amber-800 dark:text-amber-300">Google Drive</p>
+      {% if gdrive_connected %}
+      <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Connected. Uploads go to a <strong>QuickPOS Backups</strong> folder on the signed-in Google account. Use Restore on a local snapshot to replace this till’s database.</p>
+      {% elif gdrive_configured %}
+      <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">OAuth client is saved. Click <strong>Connect to Google Drive</strong> and sign in. Stay on <code>http://127.0.0.1:5001</code> (not localhost) so the login session survives the Google redirect.</p>
+      {% else %}
+      <p class="text-amber-700 dark:text-amber-400 text-xs mt-1">Add your Web application Client ID and Secret in <strong>Settings</strong>, including the redirect URIs shown there. Then return here to connect.</p>
+      {% endif %}
     </div>
   </div>
 </div>

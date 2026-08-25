@@ -91,7 +91,6 @@ CUSTOMERS = [
 ]
 
 PAYMENT_METHODS = ["cash", "card", "wallet"]
-CASHIERS = ["Sarah Adams", "Mike Chen", "Jessica Brown", "Tom Wilson"]
 
 
 def main():
@@ -151,8 +150,17 @@ def main():
         (id, store_name, address, phone, email, tax_rate, currency, currency_symbol, receipt_footer, low_stock_alert_enabled)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
         (uid(), "QuickPOS Market", "123 Main Street, Springfield", "+1 555 0100",
-         "hello@quickpos.market", 8, "USD", "$",
+         "hello@quickpos.market", 8, "PKR", "Rs",
          "Thank you for shopping at QuickPOS! Come back soon.")
+    )
+
+    # Default admin — created before orders so sales are attributed to a real user
+    print("Creating default admin user...")
+    admin_id = uid()
+    admin_pw = generate_password_hash("admin123")
+    cur.execute(
+        "INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, 'admin', 1)",
+        (admin_id, "Admin", "admin@quickpos.com", admin_pw)
     )
 
     # Demo orders
@@ -207,10 +215,10 @@ def main():
         order_id = uid()
         cur.execute(
             """INSERT INTO orders
-            (id, order_number, customer_id, cashier_name, subtotal, tax_rate, tax, discount, total,
+            (id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax, discount, total,
              payment_method, payment_status, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
-            (order_id, order_number, customer_id, random.choice(CASHIERS),
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
+            (order_id, order_number, customer_id, admin_id, "Admin",
              round(subtotal, 2), tax_rate, tax, discount, total,
              random.choice(PAYMENT_METHODS), random_date(30))
         )
@@ -241,21 +249,6 @@ def main():
                 (total, int(total), customer_id)
             )
 
-    # Default admin user
-    print("Creating default admin user...")
-    admin_email = "admin@quickpos.com"
-    admin_pw = generate_password_hash("admin123")
-    cur.execute(
-        "INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, 'admin', 1)",
-        (uid(), "Admin", admin_email, admin_pw)
-    )
-    # Also create a demo cashier
-    cashier_pw = generate_password_hash("cashier123")
-    cur.execute(
-        "INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, 'cashier', 1)",
-        (uid(), "Demo Cashier", "cashier@quickpos.com", cashier_pw)
-    )
-
     conn.commit()
     conn.close()
 
@@ -265,7 +258,7 @@ def main():
     print(f"  - {len(PRODUCTS)} products")
     print(f"  - {len(CUSTOMERS)} customers")
     print(f"  - {order_count} orders")
-    print(f"  - 2 users (admin@quickpos.com / admin123, cashier@quickpos.com / cashier123)")
+    print(f"  - 1 user (admin@quickpos.com / admin123)")
     print()
     print("Run the app with: python app.py")
 

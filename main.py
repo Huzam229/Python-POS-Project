@@ -46,7 +46,7 @@ def _wait_for_server(host, port, timeout=8):
 
 
 def _open_app_window():
-    url = f"http://localhost:{PORT}"
+    url = f"http://127.0.0.1:{PORT}"
     browser = _find_browser()
     if browser:
         subprocess.Popen([browser, f"--app={url}", "--start-maximized"],
@@ -56,7 +56,7 @@ def _open_app_window():
 
 
 def start_flask():
-    app.run(host="localhost", port=PORT, debug=False, use_reloader=False)
+    app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
 
 
 def _run_tray():
@@ -92,9 +92,9 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=start_flask, daemon=True)
     flask_thread.start()
 
-    if _wait_for_server("localhost", PORT):
+    if _wait_for_server("127.0.0.1", PORT):
         _open_app_window()
     else:
-        webbrowser.open(f"http://localhost:{PORT}")
+        webbrowser.open(f"http://127.0.0.1:{PORT}")
 
     _run_tray()

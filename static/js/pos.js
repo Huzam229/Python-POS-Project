@@ -2,7 +2,6 @@
 let cart = [];
 let selectedCustomer = null;
 let selectedPayment = 'cash';
-let emptyEl = document.getElementById('emptyCart');
 
 function addToCart(productId, name, price, cost, stock) {
   const existing = cart.find(i => i.productId === productId);
@@ -34,7 +33,8 @@ function updateQuantity(productId, qty) {
 
 function clearCart() {
   cart = [];
-  document.getElementById('discountInput').value = 0;
+  var discountInput = document.getElementById('discountInput');
+  if (discountInput) discountInput.value = 0;
   clearCustomer();
   renderCart();
 }
@@ -66,8 +66,10 @@ function openCustomerDropdown() {
 }
 
 function closeCustomerDropdown() {
-  document.getElementById('customerDropdown').classList.add('hidden');
-  document.getElementById('noCustomers').classList.add('hidden');
+  var dd = document.getElementById('customerDropdown');
+  var no = document.getElementById('noCustomers');
+  if (dd) dd.classList.add('hidden');
+  if (no) no.classList.add('hidden');
 }
 
 function filterCustomers() {
@@ -103,16 +105,21 @@ function renderCart() {
   const countEl = document.getElementById('cartCount');
   const clearBtn = document.getElementById('clearBtn');
   const chargeBtn = document.getElementById('chargeBtn');
+  if (!cartEl || !countEl || !clearBtn || !chargeBtn) return;
 
   if (cart.length === 0) {
-    cartEl.innerHTML = '';
-    cartEl.appendChild(emptyEl);
-    emptyEl.style.display = '';
+    cartEl.innerHTML = `
+        <div id="emptyCart" class="h-full grid place-items-center text-center text-gray-400 py-16">
+          <div>
+            <i data-lucide="shopping-cart" class="w-10 h-10 mx-auto mb-2 opacity-30"></i>
+            <p class="text-sm font-medium">Empty cart</p>
+            <p class="text-xs mt-1">Tap products to start a sale</p>
+          </div>
+        </div>`;
     countEl.classList.add('hidden');
     clearBtn.classList.add('hidden');
     chargeBtn.disabled = true;
   } else {
-    emptyEl.style.display = 'none';
     countEl.classList.remove('hidden');
     clearBtn.classList.remove('hidden');
     chargeBtn.disabled = false;
@@ -121,7 +128,7 @@ function renderCart() {
       <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium truncate">${item.name}</p>
-          <p class="text-[10px] text-gray-500">${currencySymbol}${item.price.toFixed(2)} · ${item.stock} in stock</p>
+          <p class="text-[10px] text-gray-500">${(window.currencySymbol || '')}${item.price.toFixed(2)} · ${item.stock} in stock</p>
         </div>
         <div class="flex items-center gap-1">
           <button onclick="updateQuantity('${item.productId}', ${item.quantity - 1})" class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700"><i data-lucide="minus" class="w-3 h-3"></i></button>
@@ -129,7 +136,7 @@ function renderCart() {
           <button onclick="updateQuantity('${item.productId}', ${item.quantity + 1})" ${item.quantity >= item.stock ? 'disabled' : ''} class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30"><i data-lucide="plus" class="w-3 h-3"></i></button>
         </div>
         <div class="w-16 text-right shrink-0">
-          <p class="text-xs font-semibold tabular-nums">${currencySymbol}${(item.price * item.quantity).toFixed(2)}</p>
+          <p class="text-xs font-semibold tabular-nums">${(window.currencySymbol || '')}${(item.price * item.quantity).toFixed(2)}</p>
         </div>
         <button onclick="removeFromCart('${item.productId}')" class="text-gray-400 hover:text-red-600 shrink-0"><i data-lucide="x" class="w-3 h-3"></i></button>
       </div>
@@ -144,15 +151,19 @@ function renderCart() {
 }
 
 function updateTotals() {
+  const subtotalEl = document.getElementById('subtotal');
+  const discountInput = document.getElementById('discountInput');
+  if (!subtotalEl || !discountInput) return;
   const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = Math.round(subtotal * window.taxRate / 100 * 100) / 100;
-  const discount = parseFloat(document.getElementById('discountInput').value) || 0;
+  const tax = Math.round(subtotal * (window.taxRate || 0) / 100 * 100) / 100;
+  const discount = parseFloat(discountInput.value) || 0;
   const total = Math.round((subtotal + tax - discount) * 100) / 100;
+  const sym = window.currencySymbol || '';
 
-  document.getElementById('subtotal').textContent = currencySymbol + subtotal.toFixed(2);
-  document.getElementById('tax').textContent = currencySymbol + tax.toFixed(2);
-  document.getElementById('total').textContent = currencySymbol + total.toFixed(2);
-  document.getElementById('chargeAmount').textContent = currencySymbol + total.toFixed(2);
+  subtotalEl.textContent = sym + subtotal.toFixed(2);
+  document.getElementById('tax').textContent = sym + tax.toFixed(2);
+  document.getElementById('total').textContent = sym + total.toFixed(2);
+  document.getElementById('chargeAmount').textContent = sym + total.toFixed(2);
 }
 
 function filterProducts() {
@@ -169,6 +180,7 @@ function filterProducts() {
 
 function handleBarcodeScan(barcode) {
   const input = document.getElementById('barcodeInput');
+  if (!input) return;
   input.value = '';
   input.focus();
 
@@ -190,17 +202,9 @@ function handleBarcodeScan(barcode) {
     });
 }
 
-(function () {
-  const barcodeInput = document.getElementById('barcodeInput');
-  barcodeInput.focus();
-
-  barcodeInput.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      var val = this.value.trim();
-      if (val) handleBarcodeScan(val);
-    }
-  });
+(function bindPosEvents() {
+  if (window.__qpPosBound) return;
+  window.__qpPosBound = true;
 
   document.addEventListener('click', function (e) {
     var tag = e.target.tagName;
@@ -208,17 +212,46 @@ function handleBarcodeScan(barcode) {
     if (e.target.closest('#cart') || e.target.closest('#checkoutModal') || e.target.closest('#receiptModal')) return;
     if (e.target.closest('#customerPicker')) return;
     closeCustomerDropdown();
-    barcodeInput.focus();
+    var barcodeInput = document.getElementById('barcodeInput');
+    if (barcodeInput) barcodeInput.focus();
   });
 
-  // Customer picker
-  var cs = document.getElementById('customerSearch');
-  cs.addEventListener('input', filterCustomers);
-  cs.addEventListener('focus', function () { if (this.value.trim()) filterCustomers(); });
-  cs.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeCustomerDropdown();
+  document.addEventListener('keydown', function (e) {
+    if (e.target && e.target.id === 'barcodeInput' && e.key === 'Enter') {
+      e.preventDefault();
+      var val = e.target.value.trim();
+      if (val) handleBarcodeScan(val);
+    }
+    if (e.target && e.target.id === 'customerSearch' && e.key === 'Escape') {
+      closeCustomerDropdown();
+    }
+  });
+
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'customerSearch') filterCustomers();
+  });
+  document.addEventListener('focusin', function (e) {
+    if (e.target && e.target.id === 'customerSearch' && e.target.value.trim()) filterCustomers();
   });
 })();
+
+function initPosPage() {
+  var barcodeInput = document.getElementById('barcodeInput');
+  if (barcodeInput) barcodeInput.focus();
+  var queued = window._qpCartQueue || [];
+  window._qpCartQueue = [];
+  queued.forEach(function (args) { addToCart.apply(null, args); });
+  renderCart();
+}
+window.initPosPage = initPosPage;
+window.addToCart = addToCart;
+window.setCategory = setCategory;
+window.clearCart = clearCart;
+window.filterProducts = filterProducts;
+
+if (document.getElementById('productGrid')) {
+  initPosPage();
+}
 
 function setCategory(catId) {
   document.querySelectorAll('#categoryTabs button').forEach(btn => {
@@ -336,7 +369,6 @@ async function processSale() {
       body: JSON.stringify({
         items: cart.map(i => ({ productId: i.productId, quantity: i.quantity })),
         customer_id: selectedCustomer,
-        cashier_name: 'Sarah Adams',
         tax_rate: window.taxRate,
         discount: discount,
         payment_method: selectedPayment,
@@ -397,16 +429,3 @@ function closeReceipt() {
   document.getElementById('receiptModal').classList.remove('flex');
   location.reload();
 }
-
-// Event delegation for product grid buttons
-document.getElementById('productGrid').addEventListener('click', function (e) {
-  const btn = e.target.closest('.product-btn');
-  if (!btn || btn.disabled) return;
-  addToCart(
-    btn.dataset.productId,
-    btn.dataset.productDisplayName,
-    parseFloat(btn.dataset.productPrice),
-    parseFloat(btn.dataset.productCost),
-    parseInt(btn.dataset.productStock)
-  );
-});

@@ -7,40 +7,85 @@ Open: http://localhost:5001
 """
 import csv
 import io
+import json
+import logging
 import os
 import random
 import re
 import shutil
 import smtplib
+import sys
 import uuid
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
 from flask import Flask, Response, render_template, request, redirect, url_for, jsonify, flash, session
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
+# NOTE: Google Drive backup libraries (google_auth_oauthlib, googleapiclient, google.auth)
+# are intentionally NOT imported here at module load time. They pull in the `cryptography`
+# package, whose compiled bindings can conflict with the OpenSSL bundled by PyInstaller and
+# crash the app on startup before it even opens a window. Instead, each import is done
+# locally inside the specific function that needs it (see _gdrive_creds, _gdrive_list,
+# backup_auth_google, backup_upload below) so the app launches fine even if that one backup
+# feature later fails. /backup itself must not import those libraries unless Drive is
+# actually configured — otherwise a missing/broken frozen import becomes a 500 page.
 
 from models import init_db, query_all, query_one, execute, get_settings, DB_PATH, DATA_DIR
 
 # Initialize DB on first import
 init_db()
 
-app = Flask(__name__)
+
+def _bundle_dir():
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+_BUNDLE_DIR = _bundle_dir()
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(_BUNDLE_DIR, "templates"),
+    static_folder=os.path.join(_BUNDLE_DIR, "static"),
+    instance_path=DATA_DIR,
+)
 app.secret_key = "quickpos-dev-secret-change-in-prod"
 app.permanent_session_lifetime = timedelta(days=7)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+
+_log = logging.getLogger("quickpos")
+if not _log.handlers:
+    _log.setLevel(logging.INFO)
+    try:
+        _fh = logging.FileHandler(os.path.join(DATA_DIR, "quickpos.log"), encoding="utf-8")
+        _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        _log.addHandler(_fh)
+    except Exception:
+        pass
+
+
+@app.errorhandler(Exception)
+def _unhandled_error(e):
+    if isinstance(e, HTTPException):
+        return e
+    _log.exception("Unhandled error on %s", getattr(request, "path", "?"))
+    return (
+        "<h1>Internal Server Error</h1>"
+        "<p>Something went wrong. Details were written to quickpos.log in the QuickPOS data folder.</p>",
+        500,
+    )
 
 PORT = int(os.environ.get("PORT", 5001))
 
 
 # ---------- Helpers ----------
 
-def fmt_money(amount, symbol="$"):
+def fmt_money(amount, symbol="Rs"):
     if amount is None:
         amount = 0
     return f"{symbol}{amount:,.2f}"
@@ -131,20 +176,49 @@ def parse_int(s, default=0):
 
 
 def get_date_range():
-    now = datetime.utcnow()
-    default_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-    default_to = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
-    date_from = request.args.get("date_from", default_from)
-    date_to = request.args.get("date_to", default_to)
+    """Return (from_day, to_day) as YYYY-MM-DD for date inputs and SQL bounds."""
+    now = datetime.now()
+    default_from = now.replace(day=1).strftime("%Y-%m-%d")
+    default_to = now.strftime("%Y-%m-%d")
+    date_from = (request.args.get("date_from") or default_from)[:10]
+    date_to = (request.args.get("date_to") or default_to)[:10]
     try:
-        datetime.fromisoformat(date_from)
+        datetime.strptime(date_from, "%Y-%m-%d")
     except (ValueError, TypeError):
         date_from = default_from
     try:
-        datetime.fromisoformat(date_to)
+        datetime.strptime(date_to, "%Y-%m-%d")
     except (ValueError, TypeError):
         date_to = default_to
     return date_from, date_to
+
+
+def _parse_ts(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace(" ", "T")[:19])
+    except (ValueError, TypeError):
+        return None
+
+
+def _sql_ts(value):
+    """Normalize a datetime or date string so SQLite can compare it."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    text = (value or "").replace("T", " ").strip()
+    if len(text) == 10:
+        return text + " 00:00:00"
+    return text[:19]
+
+
+def _range_sql():
+    date_from, date_to = get_date_range()
+    return date_from, date_to, date_from + " 00:00:00", date_to + " 23:59:59"
+
+
+# SQLite stores POS orders as 'YYYY-MM-DD HH:MM:SS' and seed/python as ISO with 'T'.
+_CREATED = "datetime(replace({a}created_at, 'T', ' '))"
 
 
 # ---------- Auth helpers ----------
@@ -162,6 +236,19 @@ def login_required(f):
         session["user_role"] = user["role"]
         return f(*args, **kwargs)
     return decorated
+
+
+def _apply_cashier(order):
+    """Prefer the linked user's current name; fall back to the name saved on the order."""
+    if not order:
+        return order
+    display = order.get("cashier_display")
+    if not display and order.get("user_id"):
+        user = query_one("SELECT name FROM users WHERE id = ?", (order["user_id"],))
+        if user:
+            display = user["name"]
+    order["cashier_name"] = display or order.get("cashier_name") or "Unknown"
+    return order
 
 
 def admin_required(f):
@@ -412,6 +499,13 @@ def users_delete(user_id):
     if user_id == session.get("user_id"):
         flash("You cannot delete yourself", "error")
         return redirect(url_for("users_view"))
+    user = query_one("SELECT * FROM users WHERE id = ?", (user_id,))
+    if user:
+        execute(
+            "UPDATE orders SET cashier_name = ? WHERE user_id = ? AND (cashier_name IS NULL OR cashier_name = '')",
+            (user["name"], user_id),
+        )
+        execute("UPDATE orders SET user_id = NULL WHERE user_id = ?", (user_id,))
     execute("DELETE FROM users WHERE id = ?", (user_id,))
     flash("User deleted", "success")
     return redirect(url_for("users_view"))
@@ -435,10 +529,16 @@ def users_toggle(user_id):
 
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+GDRIVE_FOLDER_NAME = "QuickPOS Backups"
 
 
 def _ensure_backup_dir():
     os.makedirs(BACKUP_DIR, exist_ok=True)
+
+
+def _gdrive_token_path():
+    _ensure_backup_dir()
+    return os.path.join(BACKUP_DIR, "token.json")
 
 
 def _backup_list():
@@ -452,6 +552,10 @@ def _backup_list():
 
 
 def _fmt_size(n):
+    try:
+        n = float(n or 0)
+    except (TypeError, ValueError):
+        n = 0
     for unit in ("B", "KB", "MB", "GB"):
         if n < 1024:
             return f"{n:.1f} {unit}"
@@ -459,57 +563,256 @@ def _fmt_size(n):
     return f"{n:.1f} TB"
 
 
-def _gdrive_creds():
+def _oauth_pending_path():
+    _ensure_backup_dir()
+    return os.path.join(BACKUP_DIR, "oauth_pending.json")
+
+
+def _save_oauth_pending(state, redirect_uri, code_verifier):
+    with open(_oauth_pending_path(), "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "state": state,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+            },
+            f,
+        )
+
+
+def _load_oauth_pending(state):
+    path = _oauth_pending_path()
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if data.get("state") != state:
+        return None
+    return data
+
+
+def _clear_oauth_pending():
+    path = _oauth_pending_path()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def _gdrive_oauth_search_paths():
+    paths = [
+        os.path.join(DATA_DIR, "gdrive_oauth.json"),
+        os.path.join(_BUNDLE_DIR, "gdrive_oauth.json"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "gdrive_oauth.json"),
+    ]
+    seen = set()
+    out = []
+    for p in paths:
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def _parse_oauth_client_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None, None
+    block = data.get("web") or data.get("installed") or data
+    cid = (block.get("client_id") or "").strip()
+    csec = (block.get("client_secret") or "").strip()
+    if cid and csec:
+        return cid, csec
+    return None, None
+
+
+def _persist_gdrive_client(cid, csec):
     s = get_settings()
-    cid = s.get("gdrive_client_id")
-    csec = s.get("gdrive_client_secret")
+    if not s or not cid or not csec:
+        return
+    if (s.get("gdrive_client_id") or "") == cid and (s.get("gdrive_client_secret") or "") == csec:
+        return
+    execute(
+        "UPDATE settings SET gdrive_client_id = ?, gdrive_client_secret = ?, updated_at = datetime('now') WHERE id = ?",
+        (cid, csec, s["id"]),
+    )
+
+
+def _gdrive_client():
+    """Return (client_id, client_secret) from settings, env, or local OAuth file."""
+    s = get_settings() or {}
+    cid = (s.get("gdrive_client_id") or os.environ.get("QUICKPOS_GDRIVE_CLIENT_ID") or "").strip()
+    csec = (s.get("gdrive_client_secret") or os.environ.get("QUICKPOS_GDRIVE_CLIENT_SECRET") or "").strip()
+    if cid and csec:
+        return cid, csec
+    for path in _gdrive_oauth_search_paths():
+        if os.path.isfile(path):
+            cid, csec = _parse_oauth_client_file(path)
+            if cid and csec:
+                _persist_gdrive_client(cid, csec)
+                return cid, csec
+    return None, None
+
+
+def _gdrive_configured():
+    cid, csec = _gdrive_client()
+    return bool(cid and csec)
+
+
+def _gdrive_redirect_uris():
+    return [
+        f"http://127.0.0.1:{PORT}/backup/oauth/callback",
+        f"http://localhost:{PORT}/backup/oauth/callback",
+    ]
+
+
+def _gdrive_redirect_uri():
+    """Keep the callback on the same host the admin is using so the session cookie survives."""
+    host = (request.host or f"127.0.0.1:{PORT}").split("%")[0]
+    scheme = "https" if request.is_secure else "http"
+    return f"{scheme}://{host}/backup/oauth/callback"
+
+
+def _enable_http_oauth():
+    os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
+
+def _patch_requests_packages():
+    """PyInstaller does not collect the runtime aliases in requests.packages."""
+    try:
+        import urllib3
+        import urllib3.util.ssl_ as urllib3_ssl
+        sys.modules.setdefault("requests.packages.urllib3", urllib3)
+        sys.modules.setdefault("requests.packages.urllib3.util", urllib3.util)
+        sys.modules.setdefault("requests.packages.urllib3.util.ssl_", urllib3_ssl)
+    except Exception:
+        pass
+
+
+def _gdrive_flow(redirect_uri):
+    cid, csec = _gdrive_client()
     if not cid or not csec:
         return None
-    token_path = os.path.join(BACKUP_DIR, "token.json")
-    creds = None
-    if os.path.exists(token_path):
+    _enable_http_oauth()
+    _patch_requests_packages()
+    from google_auth_oauthlib.flow import Flow
+    client_config = {
+        "web": {
+            "client_id": cid,
+            "client_secret": csec,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": _gdrive_redirect_uris(),
+        }
+    }
+    flow = Flow.from_client_config(client_config, scopes=SCOPES)
+    flow.redirect_uri = redirect_uri
+    return flow
+
+
+def _gdrive_creds():
+    if not _gdrive_configured():
+        return None
+    token_path = _gdrive_token_path()
+    if not os.path.exists(token_path):
+        return None
+    try:
+        _enable_http_oauth()
+        _patch_requests_packages()
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    if creds and creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            with open(token_path, "w") as f:
-                f.write(creds.to_json())
-        except Exception:
-            return None
-    return creds
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, "w") as f:
+                    f.write(creds.to_json())
+            except Exception:
+                _log.exception("Google Drive token refresh failed")
+                return None
+        return creds
+    except Exception:
+        _log.exception("Google Drive credentials could not be loaded")
+        return None
+
+
+def _gdrive_service():
+    creds = _gdrive_creds()
+    if not creds or not getattr(creds, "valid", False):
+        return None
+    _patch_requests_packages()
+    from googleapiclient.discovery import build
+    return build("drive", "v3", credentials=creds)
+
+
+def _gdrive_folder_id(service):
+    q = (
+        f"name = '{GDRIVE_FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' "
+        "and trashed = false"
+    )
+    results = service.files().list(q=q, spaces="drive", fields="files(id, name)", pageSize=5).execute()
+    files = results.get("files") or []
+    if files:
+        return files[0]["id"]
+    created = service.files().create(
+        body={"name": GDRIVE_FOLDER_NAME, "mimeType": "application/vnd.google-apps.folder"},
+        fields="id",
+    ).execute()
+    return created["id"]
 
 
 def _gdrive_list():
-    creds = _gdrive_creds()
-    if not creds or not creds.valid:
-        return []
     try:
-        service = build("drive", "v3", credentials=creds)
+        service = _gdrive_service()
+        if not service:
+            return []
+        folder_id = _gdrive_folder_id(service)
         results = service.files().list(
-            q="name contains 'quickpos_' and mimeType = 'application/octet-stream'",
+            q=f"'{folder_id}' in parents and trashed = false",
             orderBy="createdTime desc",
-            pageSize=20,
-            fields="files(id, name, size, createdTime)"
+            pageSize=30,
+            fields="files(id, name, size, createdTime)",
         ).execute()
         files = results.get("files", [])
         for f in files:
-            f["size_fmt"] = _fmt_size(int(f.get("size", 0)))
+            f["size_fmt"] = _fmt_size(int(f.get("size", 0) or 0))
         return files
     except Exception:
+        _log.exception("Google Drive file list failed")
         return []
 
 
 @app.route("/backup")
 @admin_required
 def backup_view():
-    settings = get_settings()
+    settings = get_settings() or {}
     db_path = DB_PATH
     db_size = os.path.getsize(db_path) if os.path.exists(db_path) else 0
     db_mtime = datetime.fromtimestamp(os.path.getmtime(db_path)).isoformat() if os.path.exists(db_path) else ""
-    snapshots = _backup_list()
-    creds = _gdrive_creds()
-    gdrive_connected = creds is not None and creds.valid
-    gdrive_files = _gdrive_list() if gdrive_connected else []
+    try:
+        snapshots = _backup_list()
+    except Exception:
+        _log.exception("Failed to list local backup snapshots")
+        snapshots = []
+    gdrive_configured = _gdrive_configured()
+    gdrive_connected = False
+    gdrive_files = []
+    try:
+        creds = _gdrive_creds()
+        gdrive_connected = creds is not None and getattr(creds, "valid", False)
+        if gdrive_connected:
+            gdrive_files = _gdrive_list()
+    except Exception:
+        _log.exception("Google Drive status check failed")
+        gdrive_connected = False
+        gdrive_files = []
     return render_template(
         "backup.html",
         active_view="backup",
@@ -518,8 +821,10 @@ def backup_view():
         db_size_fmt=_fmt_size(db_size),
         db_mtime=db_mtime,
         snapshots=snapshots,
+        gdrive_configured=gdrive_configured,
         gdrive_connected=gdrive_connected,
         gdrive_files=gdrive_files,
+        gdrive_redirect_uris=_gdrive_redirect_uris(),
     )
 
 
@@ -584,56 +889,85 @@ def backup_delete(filename):
     return redirect(url_for("backup_view"))
 
 
-@app.route("/backup/auth/google", methods=["GET", "POST"])
+@app.route("/backup/auth/google")
 @admin_required
 def backup_auth_google():
-    s = get_settings()
-    cid = s.get("gdrive_client_id")
-    csec = s.get("gdrive_client_secret")
-    if not cid or not csec:
-        flash("Google Drive Client ID and Secret must be configured in Settings", "error")
+    if not _gdrive_configured():
+        flash("Add your Google Drive Client ID and Client Secret in Settings first.", "error")
+        return redirect(url_for("settings_view"))
+    try:
+        redirect_uri = _gdrive_redirect_uri()
+        flow = _gdrive_flow(redirect_uri)
+        if not flow:
+            flash("Google Drive OAuth client is not configured.", "error")
+            return redirect(url_for("settings_view"))
+        auth_url, state = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="false",
+        )
+        session["gdrive_oauth_state"] = state
+        session["gdrive_oauth_redirect"] = redirect_uri
+        session["gdrive_oauth_verifier"] = flow.code_verifier
+        _save_oauth_pending(state, redirect_uri, flow.code_verifier)
+        return redirect(auth_url)
+    except Exception as e:
+        _log.exception("Google Drive auth URL failed")
+        flash(f"Could not start Google Drive authorization: {e}", "error")
         return redirect(url_for("backup_view"))
-    _ensure_backup_dir()
-    import json
 
-    if request.method == "POST":
-        code = request.form.get("code", "").strip()
-        if not code:
-            flash("Authorization code is required", "error")
-            return redirect(url_for("backup_auth_google"))
-        try:
-            cred_path = os.path.join(BACKUP_DIR, "credentials.json")
-            flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
-            flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
-            creds = flow.fetch_token(code=code)
-            # Get full credentials object
-            creds = flow.credentials
-            token_path = os.path.join(BACKUP_DIR, "token.json")
-            with open(token_path, "w") as f:
-                f.write(creds.to_json())
-            flash("Google Drive connected successfully!", "success")
-            return redirect(url_for("backup_view"))
-        except Exception as e:
-            flash(f"Token exchange failed: {e}", "error")
-            return redirect(url_for("backup_auth_google"))
 
-    # GET: write credentials file, generate auth URL, show form
-    cred_data = {
-        "installed": {
-            "client_id": cid,
-            "client_secret": csec,
-            "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    }
-    cred_path = os.path.join(BACKUP_DIR, "credentials.json")
-    with open(cred_path, "w") as f:
-        json.dump(cred_data, f)
-    flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
-    flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
-    auth_url = flow.authorization_url(access_type="offline", include_granted_scopes="true")[0]
-    return render_template("backup_auth.html", auth_url=auth_url)
+@app.route("/backup/oauth/callback")
+def backup_oauth_callback():
+    if "user_id" not in session:
+        flash("Log in as admin, then connect Google Drive again.", "error")
+        return redirect(url_for("login"))
+    user = query_one("SELECT * FROM users WHERE id = ?", (session["user_id"],))
+    if not user or user.get("role") != "admin":
+        flash("Admin access required to connect Google Drive.", "error")
+        return redirect(url_for("dashboard"))
+    if request.args.get("error"):
+        flash(f"Google authorization was cancelled: {request.args.get('error')}", "error")
+        return redirect(url_for("backup_view"))
+    pending = _load_oauth_pending(request.args.get("state"))
+    expected_state = (pending or {}).get("state") or session.get("gdrive_oauth_state")
+    if request.args.get("state") != expected_state:
+        flash("Google authorization failed (state mismatch). Try Connect again.", "error")
+        return redirect(url_for("backup_view"))
+    code = request.args.get("code")
+    if not code:
+        flash("Google did not return an authorization code.", "error")
+        return redirect(url_for("backup_view"))
+    try:
+        redirect_uri = (pending or {}).get("redirect_uri") or session.get("gdrive_oauth_redirect") or _gdrive_redirect_uri()
+        flow = _gdrive_flow(redirect_uri)
+        flow.code_verifier = (pending or {}).get("code_verifier") or session.get("gdrive_oauth_verifier")
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        with open(_gdrive_token_path(), "w") as f:
+            f.write(creds.to_json())
+        session.pop("gdrive_oauth_state", None)
+        session.pop("gdrive_oauth_redirect", None)
+        session.pop("gdrive_oauth_verifier", None)
+        _clear_oauth_pending()
+        flash("Google Drive connected. Backups will go to the QuickPOS Backups folder.", "success")
+    except Exception as e:
+        _log.exception("Google Drive token exchange failed")
+        flash(f"Could not finish Google Drive connection: {e}", "error")
+    return redirect(url_for("backup_view"))
+
+
+@app.route("/backup/disconnect", methods=["POST"])
+@admin_required
+def backup_disconnect():
+    token_path = _gdrive_token_path()
+    try:
+        if os.path.exists(token_path):
+            os.remove(token_path)
+        flash("Google Drive disconnected from this till.", "success")
+    except Exception as e:
+        flash(f"Could not disconnect: {e}", "error")
+    return redirect(url_for("backup_view"))
 
 
 @app.route("/backup/upload/<filename>", methods=["POST"])
@@ -644,20 +978,83 @@ def backup_upload(filename):
     if not os.path.exists(path) or not safe.startswith("quickpos_") or not safe.endswith(".db"):
         flash("Invalid backup file", "error")
         return redirect(url_for("backup_view"))
-    creds = _gdrive_creds()
-    if not creds or not creds.valid:
-        flash("Google Drive not connected. Click 'Connect to Google Drive' first.", "error")
+    try:
+        service = _gdrive_service()
+        if not service:
+            flash("Google Drive not connected. Click Connect to Google Drive first.", "error")
+            return redirect(url_for("backup_view"))
+        from googleapiclient.http import MediaFileUpload
+        folder_id = _gdrive_folder_id(service)
+        media = MediaFileUpload(path, mimetype="application/octet-stream", resumable=True)
+        uploaded = service.files().create(
+            body={"name": safe, "parents": [folder_id]},
+            media_body=media,
+            fields="id,name",
+        ).execute()
+        flash(f"Uploaded {uploaded.get('name')} to Google Drive folder “{GDRIVE_FOLDER_NAME}”.", "success")
+    except Exception as e:
+        _log.exception("Google Drive upload failed")
+        flash(f"Upload failed: {e}", "error")
+    return redirect(url_for("backup_view"))
+
+
+@app.route("/backup/drive/download/<file_id>", methods=["POST"])
+@admin_required
+def backup_drive_download(file_id):
+    file_id = (file_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id):
+        flash("Invalid Google Drive file.", "error")
         return redirect(url_for("backup_view"))
     try:
-        service = build("drive", "v3", credentials=creds)
-        file_metadata = {"name": safe, "parents": []}
-        media = MediaFileUpload(path, mimetype="application/octet-stream", resumable=True)
-        uploaded = service.files().create(body=file_metadata, media_body=media, fields="id,name,size,createdTime").execute()
-        file_id = uploaded.get("id")
-        file_name = uploaded.get("name")
-        flash(f"Uploaded {file_name} to Google Drive (ID: {file_id})", "success")
+        service = _gdrive_service()
+        if not service:
+            flash("Google Drive not connected.", "error")
+            return redirect(url_for("backup_view"))
+        from googleapiclient.http import MediaIoBaseDownload
+        meta = service.files().get(fileId=file_id, fields="id,name").execute()
+        name = os.path.basename(meta.get("name") or f"quickpos_{file_id}.db")
+        if not name.endswith(".db"):
+            name += ".db"
+        if not name.startswith("quickpos_"):
+            name = f"quickpos_{name}"
+        dest = os.path.join(BACKUP_DIR, name)
+        request_media = service.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request_media)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        _ensure_backup_dir()
+        with open(dest, "wb") as f:
+            f.write(buf.getvalue())
+        flash(f"Downloaded {name} from Google Drive into local snapshots.", "success")
     except Exception as e:
-        flash(f"Upload failed: {e}", "error")
+        _log.exception("Google Drive download failed")
+        flash(f"Download from Drive failed: {e}", "error")
+    return redirect(url_for("backup_view"))
+
+
+@app.route("/backup/restore/<filename>", methods=["POST"])
+@admin_required
+def backup_restore(filename):
+    safe = os.path.basename(filename)
+    path = os.path.join(BACKUP_DIR, safe)
+    if not os.path.exists(path) or not safe.startswith("quickpos_") or not safe.endswith(".db"):
+        flash("Invalid backup file", "error")
+        return redirect(url_for("backup_view"))
+    try:
+        import sqlite3
+        src = sqlite3.connect(path)
+        dst = sqlite3.connect(DB_PATH)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        flash(f"Restored database from {safe}. Refresh the app to see the data.", "success")
+    except Exception as e:
+        _log.exception("Local backup restore failed")
+        flash(f"Restore failed: {e}", "error")
     return redirect(url_for("backup_view"))
 
 
@@ -668,18 +1065,24 @@ def backup_upload(filename):
 def dashboard():
     settings = get_settings()
     symbol = settings["currency_symbol"]
-    now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    yesterday_start = (now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)).isoformat()
-    week_start = (now - timedelta(days=7)).isoformat()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-    thirty_days_ago = (now - timedelta(days=30)).isoformat()
-    date_from, date_to = get_date_range()
+    now = datetime.now()
+    today_start = _sql_ts(now.replace(hour=0, minute=0, second=0, microsecond=0))
+    yesterday_start = _sql_ts(
+        now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    )
+    week_start = _sql_ts(now - timedelta(days=7))
+    month_start = _sql_ts(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+    date_from, date_to, from_sql, to_sql = _range_sql()
+    ts = _CREATED.format(a="")
 
-    today_orders = query_all("SELECT * FROM orders WHERE created_at >= ?", (today_start,))
-    yesterday_orders = query_all("SELECT * FROM orders WHERE created_at >= ? AND created_at < ?", (yesterday_start, today_start))
-    week_orders = query_all("SELECT * FROM orders WHERE created_at >= ?", (week_start,))
-    month_orders = query_all("SELECT * FROM orders WHERE created_at >= ?", (month_start,))
+    today_orders = query_all(f"SELECT * FROM orders WHERE {ts} >= datetime(?)", (today_start,))
+    yesterday_orders = query_all(
+        f"SELECT * FROM orders WHERE {ts} >= datetime(?) AND {ts} < datetime(?)",
+        (yesterday_start, today_start),
+    )
+    week_orders = query_all(f"SELECT * FROM orders WHERE {ts} >= datetime(?)", (week_start,))
+    month_orders = query_all(f"SELECT * FROM orders WHERE {ts} >= datetime(?)", (month_start,))
+
 
     today_revenue = sum(o["total"] for o in today_orders)
     yesterday_revenue = sum(o["total"] for o in yesterday_orders)
@@ -702,11 +1105,17 @@ def dashboard():
         ls["category"] = cats_map.get(ls["category_id"], {})
 
     # Recent orders (within date range)
+    o_ts = _CREATED.format(a="o.")
     recent_orders = query_all(
-        "SELECT * FROM orders WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC LIMIT 8",
-        (date_from, date_to)
+        f"""SELECT o.*, COALESCE(u.name, o.cashier_name) as cashier_display
+            FROM orders o
+            LEFT JOIN users u ON o.user_id = u.id
+            WHERE {o_ts} >= datetime(?) AND {o_ts} <= datetime(?)
+            ORDER BY o.created_at DESC LIMIT 8""",
+        (from_sql, to_sql),
     )
     for o in recent_orders:
+        _apply_cashier(o)
         if o["customer_id"]:
             c = query_one("SELECT name FROM customers WHERE id = ?", (o["customer_id"],))
             o["customer_name"] = c["name"] if c else "Walk-in"
@@ -718,7 +1127,9 @@ def dashboard():
     hourly_data = [{"hour": f"{h:02d}:00", "sales": 0, "orders": 0} for h in range(24)]
     for o in today_orders:
         try:
-            dt = datetime.fromisoformat(o["created_at"])
+            dt = _parse_ts(o["created_at"])
+            if not dt:
+                continue
             h = dt.hour
             hourly_data[h]["sales"] += o["total"]
             hourly_data[h]["orders"] += 1
@@ -739,13 +1150,15 @@ def dashboard():
 
     # Daily sales within date range
     range_orders = query_all(
-        "SELECT * FROM orders WHERE created_at >= ? AND created_at <= ? ORDER BY created_at ASC",
-        (date_from, date_to)
+        f"SELECT * FROM orders WHERE {ts} >= datetime(?) AND {ts} <= datetime(?) ORDER BY created_at ASC",
+        (from_sql, to_sql),
     )
     daily_map = {}
     for o in range_orders:
         try:
-            dt = datetime.fromisoformat(o["created_at"])
+            dt = _parse_ts(o["created_at"])
+            if not dt:
+                continue
             key = dt.strftime("%Y-%m-%d")
         except (ValueError, TypeError):
             continue
@@ -759,8 +1172,9 @@ def dashboard():
         """SELECT oi.product_id, oi.name, oi.price, oi.cost, oi.quantity, oi.subtotal
         FROM order_items oi
         JOIN orders o ON oi.order_id = o.id
-        WHERE o.created_at >= ? AND o.created_at <= ?""",
-        (date_from, date_to)
+        WHERE datetime(replace(o.created_at, 'T', ' ')) >= datetime(?)
+          AND datetime(replace(o.created_at, 'T', ' ')) <= datetime(?)""",
+        (from_sql, to_sql)
     )
     prod_map = {}
     for it in top_items:
@@ -787,20 +1201,21 @@ def dashboard():
         JOIN orders o ON oi.order_id = o.id
         JOIN products p ON oi.product_id = p.id
         JOIN categories c ON p.category_id = c.id
-        WHERE o.created_at >= ? AND o.created_at <= ?
+        WHERE datetime(replace(o.created_at, 'T', ' ')) >= datetime(?)
+          AND datetime(replace(o.created_at, 'T', ' ')) <= datetime(?)
         GROUP BY c.id
         ORDER BY revenue DESC""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for c in cat_rows:
         c["revenue"] = round(c["revenue"], 2)
 
     # Payment breakdown within date range
     pay_rows = query_all(
-        """SELECT payment_method, COUNT(*) as count, SUM(total) as total
-        FROM orders WHERE created_at >= ? AND created_at <= ?
+        f"""SELECT payment_method, COUNT(*) as count, SUM(total) as total
+        FROM orders WHERE {_CREATED.format(a="")} >= datetime(?) AND {_CREATED.format(a="")} <= datetime(?)
         GROUP BY payment_method""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for p in pay_rows:
         p["total"] = round(p["total"], 2)
@@ -1004,25 +1419,28 @@ def orders_view():
     settings = get_settings()
     search = request.args.get("search", "")
     payment = request.args.get("payment", "all")
-    date_from, date_to = get_date_range()
+    date_from, date_to, from_sql, to_sql = _range_sql()
+    o_ts = _CREATED.format(a="o.")
 
     sql = """
-        SELECT o.*, c.name as customer_name
+        SELECT o.*, c.name as customer_name,
+               COALESCE(u.name, o.cashier_name) as cashier_display
         FROM orders o
         LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN users u ON o.user_id = u.id
     """
     where = []
     params = []
     if search:
-        where.append("(o.order_number LIKE ? OR c.name LIKE ?)")
-        params.extend([f"%{search}%", f"%{search}%"])
+        where.append("(o.order_number LIKE ? OR c.name LIKE ? OR COALESCE(u.name, o.cashier_name) LIKE ?)")
+        params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
     if payment != "all":
         where.append("o.payment_method = ?")
         params.append(payment)
-    where.append("o.created_at >= ?")
-    params.append(date_from)
-    where.append("o.created_at <= ?")
-    params.append(date_to)
+    where.append(f"{o_ts} >= datetime(?)")
+    params.append(from_sql)
+    where.append(f"{o_ts} <= datetime(?)")
+    params.append(to_sql)
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY o.created_at DESC LIMIT 200"
@@ -1030,12 +1448,14 @@ def orders_view():
     orders = query_all(sql, params)
     for o in orders:
         o["customer_name"] = o["customer_name"] or "Walk-in Customer"
+        _apply_cashier(o)
         o["items"] = query_all("SELECT * FROM order_items WHERE order_id = ?", (o["id"],))
         o["items_count"] = sum(i["quantity"] for i in o["items"])
 
     if request.args.get("export") == "csv":
         cols = [("order_number", "Order #"), ("created_at", "Date"),
                 ("customer_name", "Customer"), ("cashier_name", "Cashier"),
+                ("user_id", "User ID"),
                 ("items_count", "Items"), ("payment_method", "Payment"),
                 ("subtotal", "Subtotal"), ("tax", "Tax"), ("discount", "Discount"),
                 ("total", "Total")]
@@ -1063,10 +1483,19 @@ def orders_view():
 @app.route("/orders/<order_id>")
 @login_required
 def order_detail(order_id):
-    order = query_one("SELECT o.*, c.name as customer_name FROM orders o LEFT JOIN customers c ON o.customer_id = c.id WHERE o.id = ?", (order_id,))
+    order = query_one(
+        """SELECT o.*, c.name as customer_name,
+                  COALESCE(u.name, o.cashier_name) as cashier_display
+           FROM orders o
+           LEFT JOIN customers c ON o.customer_id = c.id
+           LEFT JOIN users u ON o.user_id = u.id
+           WHERE o.id = ?""",
+        (order_id,),
+    )
     if not order:
         return jsonify({"error": "Not found"}), 404
     order["customer_name"] = order["customer_name"] or "Walk-in Customer"
+    _apply_cashier(order)
     items = query_all(
         """SELECT oi.*, p.category_id, c.name as category_name
         FROM order_items oi
@@ -1258,27 +1687,30 @@ def reports_view():
     settings = get_settings()
     days = parse_int(request.args.get("days"), 0)
     if days > 0 and days <= 365:
-        now = datetime.utcnow()
-        cutoff = (now - timedelta(days=days)).isoformat()
-        date_from = cutoff
-        date_to = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+        now = datetime.now()
+        date_from = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+        date_to = now.strftime("%Y-%m-%d")
+        from_sql, to_sql = date_from + " 00:00:00", date_to + " 23:59:59"
     else:
-        date_from, date_to = get_date_range()
+        date_from, date_to, from_sql, to_sql = _range_sql()
+    o_ts = _CREATED.format(a="o.")
 
     orders = query_all(
-        """SELECT o.*, c.name as customer_name
+        f"""SELECT o.*, c.name as customer_name
         FROM orders o LEFT JOIN customers c ON o.customer_id = c.id
-        WHERE o.created_at >= ? AND o.created_at <= ?
+        WHERE {o_ts} >= datetime(?) AND {o_ts} <= datetime(?)
         ORDER BY o.created_at ASC""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
 
     # Daily sales
     daily_map = {}
     for o in orders:
         try:
-            dt = datetime.fromisoformat(o["created_at"])
+            dt = _parse_ts(o["created_at"])
         except (ValueError, TypeError):
+            dt = None
+        if not dt:
             continue
         key = dt.strftime("%Y-%m-%d")
         if key not in daily_map:
@@ -1302,10 +1734,11 @@ def reports_view():
         SUM(oi.quantity) as quantity, SUM(oi.subtotal) as revenue,
         SUM((oi.price - oi.cost) * oi.quantity) as profit
         FROM order_items oi JOIN orders o ON oi.order_id = o.id
-        WHERE o.created_at >= ? AND o.created_at <= ?
+        WHERE datetime(replace(o.created_at, 'T', ' ')) >= datetime(?)
+          AND datetime(replace(o.created_at, 'T', ' ')) <= datetime(?)
         GROUP BY oi.product_id
         ORDER BY revenue DESC""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for r in top_rows:
         r["revenue"] = round(r["revenue"], 2)
@@ -1326,9 +1759,10 @@ def reports_view():
         JOIN orders o ON oi.order_id = o.id
         JOIN products p ON oi.product_id = p.id
         JOIN categories c ON p.category_id = c.id
-        WHERE o.created_at >= ? AND o.created_at <= ?
+        WHERE datetime(replace(o.created_at, 'T', ' ')) >= datetime(?)
+          AND datetime(replace(o.created_at, 'T', ' ')) <= datetime(?)
         GROUP BY c.id ORDER BY revenue DESC""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for c in cat_rows:
         c["revenue"] = round(c["revenue"], 2)
@@ -1336,10 +1770,10 @@ def reports_view():
 
     # Payment breakdown
     pay_rows = query_all(
-        """SELECT payment_method, COUNT(*) as count, SUM(total) as total
-        FROM orders WHERE created_at >= ? AND created_at <= ?
+        f"""SELECT payment_method, COUNT(*) as count, SUM(total) as total
+        FROM orders WHERE {_CREATED.format(a="")} >= datetime(?) AND {_CREATED.format(a="")} <= datetime(?)
         GROUP BY payment_method""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for p in pay_rows:
         p["total"] = round(p["total"], 2)
@@ -1397,8 +1831,8 @@ def settings_view():
                 request.form.get("phone"),
                 request.form.get("email"),
                 parse_float(request.form.get("tax_rate"), 0),
-                request.form.get("currency", "USD"),
-                request.form.get("currency_symbol", "$"),
+                request.form.get("currency", "PKR"),
+                request.form.get("currency_symbol", "Rs"),
                 request.form.get("receipt_footer", ""),
                 1 if request.form.get("low_stock_alert_enabled") in ("on", "true", "1") else 0,
                 request.form.get("smtp_host") or None,
@@ -1406,19 +1840,47 @@ def settings_view():
                 request.form.get("smtp_user") or None,
                 request.form.get("smtp_pass") or None,
                 request.form.get("smtp_from_email") or None,
-                request.form.get("gdrive_client_id") or None,
-                request.form.get("gdrive_client_secret") or None,
+                (request.form.get("gdrive_client_id") or "").strip() or (s.get("gdrive_client_id") or None),
+                (request.form.get("gdrive_client_secret") or "").strip() or (s.get("gdrive_client_secret") or None),
                 s["id"],
             )
         )
+        cid = (request.form.get("gdrive_client_id") or "").strip() or (s.get("gdrive_client_id") or "")
+        csec = (request.form.get("gdrive_client_secret") or "").strip() or (s.get("gdrive_client_secret") or "")
+        if cid and csec:
+            try:
+                with open(os.path.join(DATA_DIR, "gdrive_oauth.json"), "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "web": {
+                                "client_id": cid,
+                                "client_secret": csec,
+                                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                                "token_uri": "https://oauth2.googleapis.com/token",
+                                "redirect_uris": _gdrive_redirect_uris(),
+                            }
+                        },
+                        f,
+                        indent=2,
+                    )
+            except Exception:
+                _log.exception("Could not write gdrive_oauth.json")
         flash("Settings saved successfully", "success")
         return redirect(url_for("settings_view"))
 
+    _gdrive_client()
     settings = get_settings()
     currencies = [
-        ("USD", "$", "US Dollar"), ("EUR", "€", "Euro"), ("GBP", "£", "British Pound"),
-        ("INR", "₹", "Indian Rupee"), ("JPY", "¥", "Japanese Yen"),
-        ("CNY", "¥", "Chinese Yuan"), ("AUD", "A$", "Australian Dollar"),
+        ("PKR", "Rs", "Pakistani Rupee"),
+        ("USD", "$", "US Dollar"),
+        ("EUR", "€", "Euro"),
+        ("GBP", "£", "British Pound"),
+        ("AED", "AED", "UAE Dirham"),
+        ("SAR", "SAR", "Saudi Riyal"),
+        ("INR", "₹", "Indian Rupee"),
+        ("JPY", "¥", "Japanese Yen"),
+        ("CNY", "¥", "Chinese Yuan"),
+        ("AUD", "A$", "Australian Dollar"),
         ("CAD", "C$", "Canadian Dollar"),
     ]
     return render_template(
@@ -1426,6 +1888,8 @@ def settings_view():
         active_view="settings",
         settings=settings,
         currencies=currencies,
+        gdrive_redirect_uris=_gdrive_redirect_uris(),
+        gdrive_configured=_gdrive_configured(),
     )
 
 
@@ -1433,17 +1897,21 @@ def settings_view():
 @login_required
 def invoices_view():
     settings = get_settings()
-    date_from, date_to = get_date_range()
+    date_from, date_to, from_sql, to_sql = _range_sql()
+    o_ts = _CREATED.format(a="o.")
     orders = query_all(
-        """SELECT o.*, c.name as customer_name
+        f"""SELECT o.*, c.name as customer_name,
+                   COALESCE(u.name, o.cashier_name) as cashier_display
         FROM orders o
         LEFT JOIN customers c ON o.customer_id = c.id
-        WHERE o.created_at >= ? AND o.created_at <= ?
+        LEFT JOIN users u ON o.user_id = u.id
+        WHERE {o_ts} >= datetime(?) AND {o_ts} <= datetime(?)
         ORDER BY o.created_at DESC LIMIT 200""",
-        (date_from, date_to)
+        (from_sql, to_sql)
     )
     for o in orders:
         o["customer_name"] = o["customer_name"] or "Walk-in Customer"
+        _apply_cashier(o)
         o["items"] = query_all(
             """SELECT oi.*, c.name as category_name
             FROM order_items oi
@@ -1482,6 +1950,7 @@ def invoices_view():
 # ---------- API endpoints (POS checkout) ----------
 
 @app.route("/api/checkout", methods=["POST"])
+@login_required
 def checkout():
     """Create a new order from cart JSON."""
     try:
@@ -1490,12 +1959,17 @@ def checkout():
         if not items:
             return jsonify({"error": "Cart is empty"}), 400
 
+        cashier = query_one("SELECT id, name FROM users WHERE id = ?", (session.get("user_id"),))
+        if not cashier:
+            return jsonify({"error": "Not signed in"}), 401
+        user_id = cashier["id"]
+        cashier_name = cashier["name"]
+
         settings = get_settings()
         tax_rate = float(data.get("tax_rate", settings["tax_rate"]))
         discount = float(data.get("discount", 0))
         payment_method = data.get("payment_method", "cash")
         customer_id = data.get("customer_id") or None
-        cashier_name = data.get("cashier_name", "Cashier")
 
         # Validate stock and compute totals
         subtotal = 0.0
@@ -1526,6 +2000,7 @@ def checkout():
         count = query_one("SELECT COUNT(*) as c FROM orders")["c"]
         order_number = f"ORD-{10000 + count + 1}"
         order_id = str(uuid.uuid4())
+        created_at = _sql_ts(datetime.now())
 
         # Insert order + items + decrement stock + update customer (transaction)
         from models import get_db
@@ -1534,11 +2009,11 @@ def checkout():
             cur = conn.cursor()
             cur.execute(
                 """INSERT INTO orders
-                (id, order_number, customer_id, cashier_name, subtotal, tax_rate, tax,
-                 discount, total, payment_method, payment_status, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed')""",
-                (order_id, order_number, customer_id, cashier_name, subtotal, tax_rate,
-                 tax, discount, total, payment_method)
+                (id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax,
+                 discount, total, payment_method, payment_status, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
+                (order_id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate,
+                 tax, discount, total, payment_method, created_at)
             )
             for it in order_items:
                 cur.execute(
@@ -1567,8 +2042,17 @@ def checkout():
             conn.close()
 
         # Fetch the completed order with customer info
-        order = query_one("SELECT o.*, c.name as customer_name FROM orders o LEFT JOIN customers c ON o.customer_id = c.id WHERE o.id = ?", (order_id,))
+        order = query_one(
+            """SELECT o.*, c.name as customer_name,
+                      COALESCE(u.name, o.cashier_name) as cashier_display
+               FROM orders o
+               LEFT JOIN customers c ON o.customer_id = c.id
+               LEFT JOIN users u ON o.user_id = u.id
+               WHERE o.id = ?""",
+            (order_id,),
+        )
         order["customer_name"] = order["customer_name"] or "Walk-in Customer"
+        _apply_cashier(order)
         order["items"] = order_items
         order["currency_symbol"] = settings["currency_symbol"]
 

@@ -24,7 +24,7 @@
     <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 mb-6">
       <div class="flex items-center gap-3 mb-4">
         <div class="grid place-items-center w-10 h-10 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><i data-lucide="percent" class="w-5 h-5"></i></div>
-        <div><h3 class="font-semibold text-base">Tax & Currency</h3><p class="text-xs text-gray-500">Configure how money is calculated and displayed</p></div>
+        <div><h3 class="font-semibold text-base">Tax & Currency</h3><p class="text-xs text-gray-500">Pakistani Rupee (Rs) is the default. Other currencies are optional</p></div>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
@@ -42,7 +42,7 @@
         </div>
         <div>
           <label class="text-xs font-medium block mb-1">Symbol</label>
-          <input name="currency_symbol" id="symbolInput" value="{{ settings.currency_symbol }}" maxlength="3" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" />
+          <input name="currency_symbol" id="symbolInput" value="{{ settings.currency_symbol }}" maxlength="8" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm" />
           <p class="text-[11px] text-gray-500 mt-1">Shown on prices & receipts</p>
         </div>
       </div>
@@ -110,17 +110,36 @@
     </div>
 
     <!-- Google Drive -->
+    {% if session.user_role == 'admin' %}
     <div class="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5 mb-6">
       <div class="flex items-center gap-3 mb-4">
         <div class="grid place-items-center w-10 h-10 rounded-lg bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"><i data-lucide="cloud" class="w-5 h-5"></i></div>
-        <div><h3 class="font-semibold text-base">Google Drive</h3><p class="text-xs text-gray-500">Upload backups to Google Drive</p></div>
+        <div>
+          <h3 class="font-semibold text-base">Google Drive backups</h3>
+          <p class="text-xs text-gray-500">One OAuth client for QuickPOS. Each store signs in with its own Google account.</p>
+        </div>
+        {% if gdrive_configured %}
+        <span class="ml-auto text-[11px] font-medium px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Client configured</span>
+        {% endif %}
+      </div>
+      <ol class="text-xs text-gray-600 dark:text-gray-400 space-y-1.5 mb-4 list-decimal pl-5">
+        <li>Open <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" class="text-primary-500 underline">Google Cloud → enable Drive API</a>.</li>
+        <li>Create OAuth consent screen (External, test users = your admin Gmail).</li>
+        <li>Create credentials → OAuth client ID → type <strong>Web application</strong>.</li>
+        <li>Add these Authorized redirect URIs (copy exactly):</li>
+      </ol>
+      <div class="space-y-1 mb-4">
+        {% for uri in gdrive_redirect_uris or [] %}
+        <code class="block text-[11px] bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 font-mono break-all">{{ uri }}</code>
+        {% endfor %}
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2"><label class="text-xs font-medium block mb-1">Client ID</label><input name="gdrive_client_id" value="{{ settings.gdrive_client_id or '' }}" placeholder="123456789-xxxxx.apps.googleusercontent.com" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm font-mono text-xs" /></div>
-        <div class="md:col-span-2"><label class="text-xs font-medium block mb-1">Client Secret</label><input name="gdrive_client_secret" value="{{ settings.gdrive_client_secret or '' }}" placeholder="GOCSPX-xxxxxxxxxxxxxxxxxxxx" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm font-mono text-xs" /></div>
+        <div class="md:col-span-2"><label class="text-xs font-medium block mb-1">Client Secret</label><input name="gdrive_client_secret" type="password" value="{{ settings.gdrive_client_secret or '' }}" placeholder="{{ 'Saved — leave blank to keep' if settings.gdrive_client_secret else 'GOCSPX-xxxxxxxxxxxxxxxxxxxx' }}" class="w-full h-9 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 text-sm font-mono text-xs" /></div>
       </div>
-      <p class="text-[11px] text-gray-500 mt-2">Create a <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-primary-500 underline">Google Cloud OAuth 2.0 Client ID</a> of type "Desktop app" with the Drive API enabled.</p>
+      <p class="text-[11px] text-gray-500 mt-2">Save here, then open <strong>Backup → Connect to Google Drive</strong>. Each business till keeps its own token; they only need this Client ID if you ship one vendor app.</p>
     </div>
+    {% endif %}
 
     <!-- Sticky save bar -->
     <div class="sticky bottom-4 flex items-center justify-end gap-3 bg-white dark:bg-gray-900 backdrop-blur border border-gray-200 dark:border-gray-800 rounded-xl p-3 shadow-lg">
@@ -160,7 +179,7 @@ function updateReceiptPreview() {
   const receipt = document.querySelector('.font-mono.text-xs.text-center');
   if (receipt) {
     receipt.querySelectorAll('p').forEach(p => {
-      if (p.textContent.includes('—')) p.innerHTML = p.innerHTML.replace(/[€$£¥₹]+/g, sym);
+      if (p.textContent.includes('—')) p.innerHTML = p.innerHTML.replace(/(Rs\.?|AED|SAR|[€$£¥₹₨])+/g, sym);
     });
   }
 }

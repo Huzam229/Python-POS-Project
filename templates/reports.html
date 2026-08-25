@@ -122,10 +122,8 @@
 const symbol = "{{ settings.currency_symbol }}";
 const daily = {{ daily_sales | tojson }};
 const cats = {{ category_breakdown | tojson }};
-const tops = {{ top_products | tojson }};
 
-// Revenue vs Profit
-new Chart(document.getElementById('revProfitChart'), {
+qpChart('revProfitChart', {
   type: 'line',
   data: {
     labels: daily.map(d => d.label),
@@ -140,22 +138,19 @@ new Chart(document.getElementById('revProfitChart'), {
   },
 });
 
-// Orders line
-new Chart(document.getElementById('ordersChart'), {
+qpChart('ordersChart', {
   type: 'line',
   data: { labels: daily.map(d => d.label), datasets: [{ label: 'Orders', data: daily.map(d => d.orders), borderColor: '#10b981', backgroundColor: '#10b981', tension: 0.4, borderWidth: 2, pointRadius: 3 }] },
   options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
 });
 
-// Category pie
-new Chart(document.getElementById('catChart'), {
+qpChart('catChart', {
   type: 'doughnut',
   data: { labels: cats.map(c => c.name), datasets: [{ data: cats.map(c => c.revenue), backgroundColor: cats.map(c => c.color) }] },
   options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } },
 });
 
-// Category bar
-new Chart(document.getElementById('catBarChart'), {
+qpChart('catBarChart', {
   type: 'bar',
   data: {
     labels: cats.map(c => c.name),

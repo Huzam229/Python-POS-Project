@@ -34,7 +34,7 @@
     <div class="flex-1 overflow-y-auto pos-scroll p-6">
       <div id="productGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {% for p in products %}
-        <button data-product-id="{{ p.id | e }}"
+        <button type="button" data-product-id="{{ p.id | e }}"
           data-product-cat="{{ p.category_id | e }}"
           data-product-display-name="{{ p.name | e }}"
           data-product-name="{{ p.name | lower | e }}"
@@ -46,11 +46,11 @@
           {% if p.stock <= 0 %}disabled{% endif %}
           class="product-btn group relative text-left rounded-xl border bg-white dark:bg-gray-900 hover:border-primary-500 hover:shadow-md transition-all overflow-hidden
           {% if p.stock <= 0 %}opacity-50 cursor-not-allowed{% endif %}">
-          <div class="h-20 relative grid place-items-center" style="background: linear-gradient(135deg, {{ p.category_color }}22, {{ p.category_color }}11)">
+          <div class="pointer-events-none h-20 relative grid place-items-center" style="background: linear-gradient(135deg, {{ p.category_color }}22, {{ p.category_color }}11)">
             <span class="text-2xl font-bold opacity-70" style="color: {{ p.category_color }}">{{ p.name[:2] | upper }}</span>
             {% if p.stock <= 0 %}<span class="absolute top-1.5 left-1.5 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">Out</span>{% endif %}
           </div>
-          <div class="p-2.5">
+          <div class="pointer-events-none p-2.5">
             <p class="text-xs font-medium line-clamp-2 leading-tight min-h-[2rem]">{{ p.name }}</p>
             <div class="mt-1.5 flex items-center justify-between">
               <span class="text-sm font-bold text-primary-600">{{ p.price | money }}</span>

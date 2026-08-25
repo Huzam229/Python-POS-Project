@@ -29,8 +29,9 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='vendor/lucide.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script>
     // Apply theme before render to avoid flash
@@ -227,7 +228,28 @@
   (function () {
     let isNavigating = false;
 
+    window._qpCartQueue = window._qpCartQueue || [];
     document.addEventListener('click', function (e) {
+      var productBtn = e.target.closest('.product-btn');
+      if (productBtn) {
+        var grid = document.getElementById('productGrid');
+        if (grid && grid.contains(productBtn) && !productBtn.disabled) {
+          e.preventDefault();
+          var args = [
+            productBtn.dataset.productId,
+            productBtn.dataset.productDisplayName,
+            parseFloat(productBtn.dataset.productPrice),
+            parseFloat(productBtn.dataset.productCost),
+            parseInt(productBtn.dataset.productStock, 10)
+          ];
+          if (typeof window.addToCart === 'function') {
+            window.addToCart.apply(null, args);
+          } else {
+            window._qpCartQueue.push(args);
+          }
+        }
+        return;
+      }
       const link = e.target.closest('a');
       if (!link) return;
       const href = link.getAttribute('href');
@@ -270,21 +292,23 @@
         var newApp = doc.getElementById('app');
         if (!newApp) { window.location.href = url; return; }
 
-        // Extract page-specific scripts (not data-app="base") from new main content
         var scripts = [];
-        var allScripts = newApp.querySelectorAll('script');
-        allScripts.forEach(function (s) { scripts.push(s); s.remove(); });
-
-        // Also extract scripts from the body that aren't base scripts
-        var bodyScripts = doc.body.querySelectorAll('script:not([data-app="base"])');
-        bodyScripts.forEach(function (s) {
-          // Avoid duplicates: check if this script src is already in scripts
+        var seenSrc = {};
+        function addPageScript(s) {
+          if (!s || s.getAttribute('data-app') === 'base') return;
           if (s.src) {
-            var dup = scripts.some(function (es) { return es.src && es.src === s.src; });
-            if (!dup) scripts.push(s);
-          } else {
-            scripts.push(s);
+            if (seenSrc[s.src]) return;
+            seenSrc[s.src] = true;
+            if (window.__qpLoadedSrc && window.__qpLoadedSrc[s.src]) return;
           }
+          scripts.push(s);
+        }
+        newApp.querySelectorAll('script').forEach(function (s) {
+          addPageScript(s);
+          s.remove();
+        });
+        doc.body.querySelectorAll('script').forEach(function (s) {
+          addPageScript(s);
         });
 
         var appEl = document.getElementById('app');
@@ -337,16 +361,43 @@
         // Push new URL state
         history.pushState({ url: url }, '', url);
 
-        // Re-execute scripts
-        scripts.forEach(function (old) {
-          var s = document.createElement('script');
-          if (old.src) { s.src = old.src; }
-          else { s.textContent = old.textContent; }
-          document.body.appendChild(s);
+        document.querySelectorAll('script[data-qp-page]').forEach(function (s) { s.remove(); });
+        function adaptPageScript(source) {
+          var text = source || '';
+          text = text.replace(/\basync function\s+([A-Za-z_$][\w$]*)/g, 'window.$1 = async function');
+          text = text.replace(/\bfunction\s+([A-Za-z_$][\w$]*)/g, 'window.$1 = function');
+          text = text.replace(/\bconst /g, 'var ');
+          text = text.replace(/\blet /g, 'var ');
+          return '(function(){\n' + text + '\n})();';
+        }
+        var loadPromises = scripts.map(function (old) {
+          return new Promise(function (resolve) {
+            var s = document.createElement('script');
+            s.setAttribute('data-qp-page', '1');
+            if (old.src) {
+              window.__qpLoadedSrc = window.__qpLoadedSrc || {};
+              window.__qpLoadedSrc[old.src] = true;
+              s.onload = function () { resolve(); };
+              s.onerror = function () { resolve(); };
+              s.src = old.src;
+              document.body.appendChild(s);
+            } else {
+              s.textContent = adaptPageScript(old.textContent);
+              document.body.appendChild(s);
+              resolve();
+            }
+          });
         });
 
-        // Re-init Lucide
-        if (window.lucide) lucide.createIcons();
+        requestAnimationFrame(function () {
+          if (window.lucide) lucide.createIcons();
+        });
+        Promise.all(loadPromises).then(function () {
+          if (window.lucide) lucide.createIcons();
+          if (path.indexOf('/pos') === 0 && typeof window.initPosPage === 'function') {
+            window.initPosPage();
+          }
+        });
       } catch (e) {
         window.location.href = url;
       } finally {

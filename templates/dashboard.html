@@ -250,11 +250,11 @@
 
 <script>
 const symbol = "{{ settings.currency_symbol }}";
-
-// Revenue area chart
-const revCtx = document.getElementById('revenueChart');
 const dailySales = {{ daily_sales | tojson }};
-new Chart(revCtx, {
+const catData = {{ category_breakdown | tojson }};
+const hourData = {{ hourly_data | tojson }};
+
+qpChart('revenueChart', {
   type: 'line',
   data: {
     labels: dailySales.map(d => d.label),
@@ -278,10 +278,7 @@ new Chart(revCtx, {
   },
 });
 
-// Category pie chart
-const catCtx = document.getElementById('categoryChart');
-const catData = {{ category_breakdown | tojson }};
-new Chart(catCtx, {
+qpChart('categoryChart', {
   type: 'doughnut',
   data: {
     labels: catData.map(c => c.name),
@@ -300,10 +297,7 @@ new Chart(catCtx, {
   },
 });
 
-// Hourly bar chart
-const hourCtx = document.getElementById('hourlyChart');
-const hourData = {{ hourly_data | tojson }};
-new Chart(hourCtx, {
+qpChart('hourlyChart', {
   type: 'bar',
   data: {
     labels: hourData.map(d => d.hour),
