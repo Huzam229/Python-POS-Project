@@ -17,6 +17,7 @@ import smtplib
 import sys
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
@@ -832,7 +833,7 @@ def backup_view():
 @admin_required
 def backup_create():
     _ensure_backup_dir()
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%Y%m%d_%H%M%S")
     name = f"quickpos_{ts}.db"
     dest = os.path.join(BACKUP_DIR, name)
     try:
@@ -851,7 +852,7 @@ def backup_download():
         return redirect(url_for("backup_view"))
     with open(DB_PATH, "rb") as f:
         data = f.read()
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%Y%m%d_%H%M%S")
     return Response(
         data,
         mimetype="application/octet-stream",
