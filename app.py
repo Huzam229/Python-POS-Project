@@ -1239,7 +1239,8 @@ def dashboard():
         "period_orders": period_orders,
         "inventory_value": round(inventory_value, 2),
         "total_products": len(products),
-        "active_products": sum(1 for p in products if p["is_active"]),
+        "active_products": sum(1 for p in products if p["is_active"]), 
+        # For every active product, produce the number 1 and sum them up
         "low_stock_count": len(query_all("SELECT id FROM products WHERE stock <= low_stock_threshold")),
     }
 

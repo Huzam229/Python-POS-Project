@@ -2,13 +2,25 @@
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_submodules,
+)
 
-datas = [("templates", "templates"), ("static", "static")]
+
+datas = [
+    ("templates", "templates"),
+    ("static", "static"),
+]
+
 if os.path.isfile("gdrive_oauth.json"):
     datas.append(("gdrive_oauth.json", "."))
 
+
 binaries = []
+
+
 hiddenimports = [
     "google.oauth2",
     "google.oauth2.credentials",
@@ -28,7 +40,11 @@ hiddenimports = [
     "urllib3",
     "urllib3.util",
     "urllib3.util.ssl_",
+
+    # PyWebView
+    "webview",
 ]
+
 
 for pkg in (
     "googleapiclient",
@@ -38,21 +54,39 @@ for pkg in (
     "httplib2",
     "certifi",
     "cryptography",
+    "webview",
 ):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+
         datas += pkg_datas
         binaries += pkg_binaries
         hiddenimports += pkg_hidden
+
     except Exception:
+
         try:
             hiddenimports += collect_submodules(pkg)
         except Exception:
             pass
+
         try:
             datas += collect_data_files(pkg)
         except Exception:
             pass
+
+
+# Platform-specific PyWebView backend
+if sys.platform == "darwin":
+    hiddenimports += [
+        "webview.platforms.cocoa",
+    ]
+
+elif sys.platform == "win32":
+    hiddenimports += [
+        "webview.platforms.edgechromium",
+    ]
+
 
 a = Analysis(
     ["run.py"],
@@ -68,11 +102,12 @@ a = Analysis(
     optimize=0,
 )
 
+
 pyz = PYZ(a.pure)
 
-# UPX on macOS corrupts the PYZ archive (zlib "incorrect header check")
-# and can strip OpenSSL symbols Drive OAuth needs.
+
 if sys.platform == "darwin":
+
     exe = EXE(
         pyz,
         a.scripts,
@@ -90,6 +125,7 @@ if sys.platform == "darwin":
         codesign_identity=None,
         entitlements_file=None,
     )
+
     coll = COLLECT(
         exe,
         a.binaries,
@@ -99,13 +135,17 @@ if sys.platform == "darwin":
         upx_exclude=[],
         name="QuickPOS",
     )
+
     app = BUNDLE(
         coll,
         name="QuickPOS.app",
         icon=None,
         bundle_identifier="com.quickpos.app",
     )
+
+
 else:
+
     exe = EXE(
         pyz,
         a.scripts,
@@ -120,7 +160,6 @@ else:
         upx_exclude=[],
         runtime_tmpdir=None,
         console=False,
-        disable_windowed_traceback=False,
         argv_emulation=False,
         target_arch=None,
         codesign_identity=None,
