@@ -145,7 +145,7 @@ def time_ago(dt_str):
 
 
 def customer_tier(points):
-    if points >= 400:
+    if points >= 300:
         return ("Platinum", "bg-purple-500")
     if points >= 200:
         return ("Gold", "bg-amber-500")
@@ -2033,7 +2033,8 @@ def checkout():
                     """UPDATE customers SET
                     total_spent = total_spent + ?, orders_count = orders_count + 1,
                     loyalty_points = loyalty_points + ? WHERE id = ?""",
-                    (total, int(total), customer_id)
+                    (total, int(total / 100), customer_id)  
+                    # TODO: Update loyalty points calculation to 1 point per Rs 100 spent
                 )
             conn.commit()
         except Exception:
