@@ -15,7 +15,6 @@ import re
 import shutil
 import smtplib
 import sys
-import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from email.message import EmailMessage
@@ -34,7 +33,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # feature later fails. /backup itself must not import those libraries unless Drive is
 # actually configured — otherwise a missing/broken frozen import becomes a 500 page.
 
-from models import init_db, query_all, query_one, execute, get_settings, DB_PATH, DATA_DIR
+from models import init_db, query_all, query_one, execute, insert, get_settings, DB_PATH, DATA_DIR
 
 # Initialize DB on first import
 init_db()
@@ -90,6 +89,16 @@ def fmt_money(amount, symbol="Rs"):
     if amount is None:
         amount = 0
     return f"{symbol}{amount:,.2f}"
+
+
+def as_id(value):
+    """Coerce a form/JSON/URL value to an integer primary key."""
+    if value is None or value == "" or value is False:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def fmt_date(dt_str):
@@ -252,6 +261,19 @@ def _apply_cashier(order):
     return order
 
 
+def _parse_order_detail(order):
+    """Decode the JSON snapshot stored on the order row."""
+    if not order:
+        return order
+    raw = order.get("order_detail")
+    if isinstance(raw, str) and raw:
+        try:
+            order["order_detail"] = json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+    return order
+
+
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -319,7 +341,7 @@ def login():
         password = request.form.get("password", "")
         user = query_one("SELECT * FROM users WHERE email = ?", (email,))
         if user and user["is_active"] and check_password_hash(user["password_hash"], password):
-            session["user_id"] = user["id"]
+            session["user_id"] = int(user["id"])
             session["user_name"] = user["name"]
             session["user_role"] = user["role"]
             session.permanent = True
@@ -359,11 +381,10 @@ def register():
         if existing:
             flash("Email already registered", "error")
             return redirect(url_for("register"))
-        user_id = str(uuid.uuid4())
         pw_hash = generate_password_hash(password)
-        execute(
-            "INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'cashier')",
-            (user_id, name, email, pw_hash)
+        insert(
+            "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, 'cashier')",
+            (name, email, pw_hash)
         )
         flash("Registration successful! You can now log in.", "success")
         return redirect(url_for("login"))
@@ -382,9 +403,9 @@ def forgot():
             return redirect(url_for("forgot"))
         otp = f"{random.randint(100000, 999999)}"
         expires = (datetime.utcnow() + timedelta(minutes=10)).isoformat()
-        execute(
-            "INSERT INTO password_resets (id, email, otp, otp_expires_at) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), email, otp, expires)
+        insert(
+            "INSERT INTO password_resets (email, otp, otp_expires_at) VALUES (?, ?, ?)",
+            (email, otp, expires)
         )
         sent = send_otp_email(email, otp)
         if not sent:
@@ -452,9 +473,9 @@ def users_new():
         flash("Email already in use", "error")
         return redirect(url_for("users_view"))
     pw_hash = generate_password_hash(password)
-    execute(
-        "INSERT INTO users (id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)",
-        (str(uuid.uuid4()), name, email, pw_hash, role)
+    insert(
+        "INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)",
+        (name, email, pw_hash, role)
     )
     flash(f"User {name} created", "success")
     return redirect(url_for("users_view"))
@@ -497,7 +518,7 @@ def users_edit(user_id):
 @app.route("/users/<user_id>/delete", methods=["POST"])
 @admin_required
 def users_delete(user_id):
-    if user_id == session.get("user_id"):
+    if as_id(user_id) == as_id(session.get("user_id")):
         flash("You cannot delete yourself", "error")
         return redirect(url_for("users_view"))
     user = query_one("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -515,7 +536,7 @@ def users_delete(user_id):
 @app.route("/users/<user_id>/toggle", methods=["POST"])
 @admin_required
 def users_toggle(user_id):
-    if user_id == session.get("user_id"):
+    if as_id(user_id) == as_id(session.get("user_id")):
         flash("You cannot deactivate yourself", "error")
         return redirect(url_for("users_view"))
     user = query_one("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -1331,17 +1352,16 @@ def products_view():
 @app.route("/products/new", methods=["POST"])
 @login_required
 def products_new():
-    execute(
+    insert(
         """INSERT INTO products
-        (id, name, sku, barcode, description, category_id, price, cost, stock, low_stock_threshold, unit, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, sku, barcode, description, category_id, price, cost, stock, low_stock_threshold, unit, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            str(uuid.uuid4()),
             request.form.get("name", ""),
             request.form.get("sku", ""),
             request.form.get("barcode") or None,
             request.form.get("description") or None,
-            request.form.get("category_id"),
+            as_id(request.form.get("category_id")),
             parse_float(request.form.get("price")),
             parse_float(request.form.get("cost")),
             parse_int(request.form.get("stock")),
@@ -1368,7 +1388,7 @@ def products_edit(product_id):
             request.form.get("sku"),
             request.form.get("barcode") or None,
             request.form.get("description") or None,
-            request.form.get("category_id"),
+            as_id(request.form.get("category_id")),
             parse_float(request.form.get("price")),
             parse_float(request.form.get("cost")),
             parse_int(request.form.get("stock")),
@@ -1393,9 +1413,9 @@ def products_delete(product_id):
 @app.route("/categories/new", methods=["POST"])
 @login_required
 def categories_new():
-    execute(
-        "INSERT INTO categories (id, name, description, color) VALUES (?, ?, ?, ?)",
-        (str(uuid.uuid4()), request.form.get("name"), request.form.get("description") or None,
+    insert(
+        "INSERT INTO categories (name, description, color) VALUES (?, ?, ?)",
+        (request.form.get("name"), request.form.get("description") or None,
          request.form.get("color", "#10b981"))
     )
     flash("Category created", "success")
@@ -1459,7 +1479,8 @@ def orders_view():
                 ("user_id", "User ID"),
                 ("items_count", "Items"), ("payment_method", "Payment"),
                 ("subtotal", "Subtotal"), ("tax", "Tax"), ("discount", "Discount"),
-                ("total", "Total")]
+                ("original_total", "Original Total"),
+                ("total", "Total"), ("cash_received", "Cash Received")]
         return csv_response("orders.csv", cols, orders)
 
     total_revenue = sum(o["total"] for o in orders)
@@ -1497,6 +1518,7 @@ def order_detail(order_id):
         return jsonify({"error": "Not found"}), 404
     order["customer_name"] = order["customer_name"] or "Walk-in Customer"
     _apply_cashier(order)
+    _parse_order_detail(order)
     items = query_all(
         """SELECT oi.*, p.category_id, c.name as category_name
         FROM order_items oi
@@ -1642,11 +1664,11 @@ def customers_view():
 @app.route("/customers/new", methods=["POST"])
 @login_required
 def customers_new():
-    execute(
+    insert(
         """INSERT INTO customers
-        (id, name, email, phone, address, loyalty_points, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (str(uuid.uuid4()), request.form.get("name"),
+        (name, email, phone, address, loyalty_points, note)
+        VALUES (?, ?, ?, ?, ?, ?)""",
+        (request.form.get("name"),
          request.form.get("email") or None, request.form.get("phone") or None,
          request.form.get("address") or None,
          parse_int(request.form.get("loyalty_points"), 0),
@@ -1927,7 +1949,9 @@ def invoices_view():
         cols = [("order_number", "Invoice #"), ("created_at", "Date"),
                 ("customer_name", "Customer"), ("cashier_name", "Cashier"),
                 ("items_count", "Items"), ("subtotal", "Subtotal"),
-                ("tax", "Tax"), ("discount", "Discount"), ("total", "Total"),
+                ("tax", "Tax"), ("discount", "Discount"), ("original_total", "Original Total"),
+                ("total", "Total"),
+                ("cash_received", "Cash Received"),
                 ("payment_method", "Payment")]
         return csv_response("invoices.csv", cols, orders)
 
@@ -1969,38 +1993,75 @@ def checkout():
         settings = get_settings()
         tax_rate = float(data.get("tax_rate", settings["tax_rate"]))
         discount = float(data.get("discount", 0))
+        if discount < 0:
+            return jsonify({"error": "Discount cannot be negative"}), 400
         payment_method = data.get("payment_method", "cash")
-        customer_id = data.get("customer_id") or None
+        customer_id = as_id(data.get("customer_id"))
 
-        # Validate stock and compute totals
+        # Validate stock and compute totals from the cashier's line prices
         subtotal = 0.0
+        original_subtotal = 0.0
         order_items = []
         for item in items:
-            p = query_one("SELECT * FROM products WHERE id = ?", (item["productId"],))
+            product_id = as_id(item.get("productId"))
+            p = query_one("SELECT * FROM products WHERE id = ?", (product_id,))
             if not p:
-                return jsonify({"error": f"Product not found: {item['productId']}"}), 400
+                return jsonify({"error": f"Product not found: {item.get('productId')}"}), 400
             qty = int(item["quantity"])
             if p["stock"] < qty:
                 return jsonify({"error": f"Insufficient stock for {p['name']}"}), 400
-            line_total = round(p["price"] * qty, 2)
+            catalog_price = round(float(p["price"]), 2)
+            try:
+                unit_price = float(item["price"]) if item.get("price") is not None else catalog_price
+            except (TypeError, ValueError):
+                return jsonify({"error": f"Invalid price for {p['name']}"}), 400
+            if unit_price < 0:
+                return jsonify({"error": f"Price cannot be negative for {p['name']}"}), 400
+            unit_price = round(unit_price, 2)
+            line_total = round(unit_price * qty, 2)
+            original_line = round(catalog_price * qty, 2)
             subtotal += line_total
+            original_subtotal += original_line
             order_items.append({
                 "product_id": p["id"],
                 "name": p["name"],
-                "price": p["price"],
+                "original_price": catalog_price,
+                "price": unit_price,
                 "cost": p["cost"],
                 "quantity": qty,
                 "subtotal": line_total,
+                "original_subtotal": original_line,
+                "price_changed": abs(unit_price - catalog_price) > 0.001,
             })
 
         subtotal = round(subtotal, 2)
+        original_subtotal = round(original_subtotal, 2)
         tax = round(subtotal * tax_rate / 100, 2)
-        total = round(subtotal + tax - discount, 2)
+        original_tax = round(original_subtotal * tax_rate / 100, 2)
+        original_total = round(original_subtotal + original_tax, 2)
+        computed_total = round(subtotal + tax - discount, 2)
+        if data.get("total") is not None and data.get("total") != "":
+            try:
+                total = round(float(data.get("total")), 2)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid total"}), 400
+            if total < 0:
+                return jsonify({"error": "Total cannot be negative"}), 400
+        else:
+            total = computed_total
+
+        cash_received = None
+        if payment_method == "cash":
+            try:
+                cash_received = round(float(data.get("cash_received") or 0), 2)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid cash received"}), 400
+            if cash_received < total:
+                return jsonify({"error": "Insufficient cash received"}), 400
 
         # Generate order number
         count = query_one("SELECT COUNT(*) as c FROM orders")["c"]
         order_number = f"ORD-{10000 + count + 1}"
-        order_id = str(uuid.uuid4())
         created_at = _sql_ts(datetime.now())
 
         # Insert order + items + decrement stock + update customer (transaction)
@@ -2010,24 +2071,74 @@ def checkout():
             cur = conn.cursor()
             cur.execute(
                 """INSERT INTO orders
-                (id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax,
-                 discount, total, payment_method, payment_status, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
-                (order_id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate,
-                 tax, discount, total, payment_method, created_at)
+                (order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax,
+                 discount, original_total, total, cash_received,
+                 payment_method, payment_status, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
+                (order_number, customer_id, user_id, cashier_name, subtotal, tax_rate,
+                 tax, discount, original_total, total, cash_received, payment_method, created_at)
             )
+            order_id = cur.lastrowid
             for it in order_items:
                 cur.execute(
                     """INSERT INTO order_items
-                    (id, order_id, product_id, name, price, cost, quantity, subtotal)
+                    (order_id, product_id, name, original_price, price, cost, quantity, subtotal)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (str(uuid.uuid4()), order_id, it["product_id"], it["name"],
-                     it["price"], it["cost"], it["quantity"], it["subtotal"])
+                    (order_id, it["product_id"], it["name"],
+                     it["original_price"], it["price"], it["cost"], it["quantity"], it["subtotal"])
                 )
                 cur.execute(
                     "UPDATE products SET stock = stock - ? WHERE id = ?",
                     (it["quantity"], it["product_id"])
                 )
+            order_detail = {
+                "order_id": order_id,
+                "order_number": order_number,
+                "customer_id": customer_id,
+                "user_id": user_id,
+                "cashier_name": cashier_name,
+                "items": [
+                    {
+                        "product_id": it["product_id"],
+                        "name": it["name"],
+                        "catalog_price": it["original_price"],
+                        "sold_price": it["price"],
+                        "price_changed": it["price_changed"],
+                        "quantity": it["quantity"],
+                        "cost": it["cost"],
+                        "subtotal": it["subtotal"],
+                        "original_subtotal": it["original_subtotal"],
+                    }
+                    for it in order_items
+                ],
+                "price_changes": [
+                    {
+                        "product_id": it["product_id"],
+                        "name": it["name"],
+                        "catalog_price": it["original_price"],
+                        "sold_price": it["price"],
+                        "quantity": it["quantity"],
+                    }
+                    for it in order_items
+                    if it["price_changed"]
+                ],
+                "original_subtotal": original_subtotal,
+                "original_tax": original_tax,
+                "original_total": original_total,
+                "subtotal": subtotal,
+                "tax_rate": tax_rate,
+                "tax": tax,
+                "discount": discount,
+                "total": total,
+                "total_overridden": abs(total - computed_total) > 0.001,
+                "cash_received": cash_received,
+                "payment_method": payment_method,
+                "created_at": created_at,
+            }
+            cur.execute(
+                "UPDATE orders SET order_detail = ? WHERE id = ?",
+                (json.dumps(order_detail, ensure_ascii=False), order_id),
+            )
             if customer_id:
                 cur.execute(
                     """UPDATE customers SET
@@ -2055,6 +2166,7 @@ def checkout():
         )
         order["customer_name"] = order["customer_name"] or "Walk-in Customer"
         _apply_cashier(order)
+        _parse_order_detail(order)
         order["items"] = order_items
         order["currency_symbol"] = settings["currency_symbol"]
 

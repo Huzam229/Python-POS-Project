@@ -87,9 +87,12 @@ async function printInvoice(orderId) {
   const o = currentInvoiceOrder;
   const body = document.getElementById('invoiceBody');
 
-  const itemsHtml = o.items.map(i => `
-    <div class="flex justify-between text-xs py-1"><span>${i.quantity}× ${i.name}</span><span>${sym}${i.subtotal.toFixed(2)}</span></div>
-  `).join('');
+  const itemsHtml = o.items.map(i => {
+    const orig = i.original_price != null ? Number(i.original_price) : Number(i.price);
+    const sold = Number(i.price);
+    const changed = Math.abs(orig - sold) > 0.001;
+    return `<div class="flex justify-between text-xs py-1"><span>${i.quantity}× ${i.name}${changed ? ` (${sym}${orig.toFixed(2)}→${sym}${sold.toFixed(2)})` : ''}</span><span>${sym}${i.subtotal.toFixed(2)}</span></div>`;
+  }).join('');
 
   body.innerHTML = `
     <div id="invoicePrintable" class="bg-white text-black rounded-lg p-4 font-mono text-xs space-y-1 border border-dashed border-gray-300">
@@ -111,7 +114,11 @@ async function printInvoice(orderId) {
         <div class="flex justify-between"><span>Subtotal</span><span>${sym}${o.subtotal.toFixed(2)}</span></div>
         <div class="flex justify-between"><span>Tax (${o.tax_rate}%)</span><span>${sym}${o.tax.toFixed(2)}</span></div>
         ${o.discount > 0 ? `<div class="flex justify-between"><span>Discount</span><span>-${sym}${o.discount.toFixed(2)}</span></div>` : ''}
+        ${o.original_total != null && Math.abs(Number(o.original_total) - Number(o.total)) > 0.001 ? `<div class="flex justify-between"><span>Original</span><span>${sym}${Number(o.original_total).toFixed(2)}</span></div>` : ''}
         <div class="flex justify-between font-bold text-xs pt-1 border-t border-gray-300"><span>TOTAL</span><span>${sym}${o.total.toFixed(2)}</span></div>
+        ${o.payment_method === 'cash' && o.cash_received != null ? `
+        <div class="flex justify-between"><span>Cash received</span><span>${sym}${Number(o.cash_received).toFixed(2)}</span></div>
+        <div class="flex justify-between"><span>Change</span><span>${sym}${(Number(o.cash_received) - o.total).toFixed(2)}</span></div>` : ''}
       </div>
       <div class="text-center pt-2 text-[10px]">${footer}</div>
     </div>

@@ -2,6 +2,7 @@
 let cart = [];
 let selectedCustomer = null;
 let selectedPayment = 'cash';
+let totalDirty = false;
 
 function addToCart(productId, name, price, cost, stock) {
   const existing = cart.find(i => i.productId === productId);
@@ -9,13 +10,16 @@ function addToCart(productId, name, price, cost, stock) {
     if (existing.quantity >= stock) return;
     existing.quantity += 1;
   } else {
-    cart.push({ productId, name, price, cost, stock, quantity: 1 });
+    const unit = Math.round((parseFloat(price) || 0) * 100) / 100;
+    cart.push({ productId, name, price: unit, catalogPrice: unit, cost, stock, quantity: 1 });
   }
+  totalDirty = false;
   renderCart();
 }
 
 function removeFromCart(productId) {
   cart = cart.filter(i => i.productId !== productId);
+  totalDirty = false;
   renderCart();
 }
 
@@ -28,13 +32,58 @@ function updateQuantity(productId, qty) {
     return;
   }
   item.quantity = qty;
+  totalDirty = false;
   renderCart();
+}
+
+function updateItemPrice(productId, value) {
+  const item = cart.find(i => i.productId === productId);
+  if (!item) return;
+  const price = Math.max(0, parseFloat(value) || 0);
+  item.price = Math.round(price * 100) / 100;
+  const sym = window.currencySymbol || '';
+  const line = document.querySelector('[data-line-total="' + productId + '"]');
+  if (line) line.textContent = sym + (item.price * item.quantity).toFixed(2);
+  const coLine = document.querySelector('[data-co-line-total="' + productId + '"]');
+  if (coLine) coLine.textContent = sym + (item.price * item.quantity).toFixed(2);
+  document.querySelectorAll('[data-item-price="' + productId + '"]').forEach(function (inp) {
+    if (inp !== document.activeElement) inp.value = item.price.toFixed(2);
+  });
+  totalDirty = false;
+  updateTotals();
+}
+
+function onFinalTotalInput(value, source) {
+  totalDirty = true;
+  const n = Math.max(0, parseFloat(value) || 0);
+  const cartInput = document.getElementById('totalInput');
+  const coInput = document.getElementById('coTotalInput');
+  if (source !== 'cart' && cartInput && cartInput !== document.activeElement) {
+    cartInput.value = n.toFixed(2);
+  }
+  if (source !== 'checkout' && coInput && coInput !== document.activeElement) {
+    coInput.value = n.toFixed(2);
+  }
+  const chargeAmount = document.getElementById('chargeAmount');
+  if (chargeAmount) chargeAmount.textContent = (window.currencySymbol || '') + n.toFixed(2);
+  refreshQuickCash(n);
+  updateChange();
+}
+
+function onDiscountInput() {
+  totalDirty = false;
+  updateTotals();
 }
 
 function clearCart() {
   cart = [];
+  totalDirty = false;
   var discountInput = document.getElementById('discountInput');
   if (discountInput) discountInput.value = 0;
+  var totalInput = document.getElementById('totalInput');
+  if (totalInput) totalInput.value = '0.00';
+  var coTotalInput = document.getElementById('coTotalInput');
+  if (coTotalInput) coTotalInput.value = '0.00';
   clearCustomer();
   renderCart();
 }
@@ -47,7 +96,7 @@ function selectCustomer(id, name, phone) {
     tag.classList.remove('hidden');
     input.classList.add('hidden');
     document.getElementById('customerTagName').textContent = name;
-    document.getElementById('customerTagPhone').textContent = phone ? phone + ' · ' + id.substr(0, 8) + '...' : '';
+    document.getElementById('customerTagPhone').textContent = phone ? phone + ' · #' + id : ('#' + id);
   } else {
     tag.classList.add('hidden');
     input.classList.remove('hidden');
@@ -124,11 +173,18 @@ function renderCart() {
     clearBtn.classList.remove('hidden');
     chargeBtn.disabled = false;
 
+    const sym = window.currencySymbol || '';
     cartEl.innerHTML = cart.map(item => `
       <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-gray-900 dark:text-gray-100">
         <div class="flex-1 min-w-0">
           <p class="text-xs font-medium truncate text-gray-900 dark:text-gray-100">${item.name}</p>
-          <p class="text-[10px] text-gray-600 dark:text-gray-400">${(window.currencySymbol || '')}${item.price.toFixed(2)} · ${item.stock} in stock</p>
+          <div class="flex items-center gap-1 mt-1">
+            <span class="text-[10px] text-gray-500 shrink-0">${sym}</span>
+            <input type="number" min="0" step="0.01" data-item-price="${item.productId}" value="${item.price.toFixed(2)}"
+              oninput="updateItemPrice('${item.productId}', this.value)"
+              class="w-[4.5rem] h-6 text-right text-xs p-0 px-1 tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:border-primary-500 focus:outline-none" />
+            <span class="text-[10px] text-gray-500">ea · ${item.stock} in stock</span>
+          </div>
         </div>
         <div class="flex items-center gap-1">
           <button onclick="updateQuantity('${item.productId}', ${item.quantity - 1})" class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700"><i data-lucide="minus" class="w-3 h-3"></i></button>
@@ -136,7 +192,7 @@ function renderCart() {
           <button onclick="updateQuantity('${item.productId}', ${item.quantity + 1})" ${item.quantity >= item.stock ? 'disabled' : ''} class="grid place-items-center w-6 h-6 rounded border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30"><i data-lucide="plus" class="w-3 h-3"></i></button>
         </div>
         <div class="w-16 text-right shrink-0">
-          <p class="text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">${(window.currencySymbol || '')}${(item.price * item.quantity).toFixed(2)}</p>
+          <p data-line-total="${item.productId}" class="text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">${sym}${(item.price * item.quantity).toFixed(2)}</p>
         </div>
         <button onclick="removeFromCart('${item.productId}')" class="text-gray-400 hover:text-red-600 shrink-0"><i data-lucide="x" class="w-3 h-3"></i></button>
       </div>
@@ -150,20 +206,75 @@ function renderCart() {
   updateTotals();
 }
 
+function getComputedTotals() {
+  const subtotal = Math.round(cart.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100;
+  const tax = Math.round(subtotal * (window.taxRate || 0) / 100 * 100) / 100;
+  const discount = parseFloat((document.getElementById('discountInput') || {}).value) || 0;
+  const computed = Math.round((subtotal + tax - discount) * 100) / 100;
+  return { subtotal, tax, discount, computed };
+}
+
+function getChargedTotal() {
+  const computed = getComputedTotals().computed;
+  const modal = document.getElementById('checkoutModal');
+  const checkoutOpen = modal && !modal.classList.contains('hidden');
+  const el = (checkoutOpen && document.getElementById('coTotalInput')) || document.getElementById('totalInput');
+  if (totalDirty && el && el.value !== '') {
+    const n = parseFloat(el.value);
+    if (!isNaN(n)) return Math.round(Math.max(0, n) * 100) / 100;
+  }
+  return computed;
+}
+
 function updateTotals() {
   const subtotalEl = document.getElementById('subtotal');
   const discountInput = document.getElementById('discountInput');
   if (!subtotalEl || !discountInput) return;
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = Math.round(subtotal * (window.taxRate || 0) / 100 * 100) / 100;
-  const discount = parseFloat(discountInput.value) || 0;
-  const total = Math.round((subtotal + tax - discount) * 100) / 100;
+  const { subtotal, tax, computed } = getComputedTotals();
+  const total = totalDirty ? getChargedTotal() : computed;
   const sym = window.currencySymbol || '';
 
   subtotalEl.textContent = sym + subtotal.toFixed(2);
   document.getElementById('tax').textContent = sym + tax.toFixed(2);
-  document.getElementById('total').textContent = sym + total.toFixed(2);
-  document.getElementById('chargeAmount').textContent = sym + total.toFixed(2);
+
+  const totalInput = document.getElementById('totalInput');
+  if (totalInput && document.activeElement !== totalInput) {
+    totalInput.value = total.toFixed(2);
+  }
+  const coTotalInput = document.getElementById('coTotalInput');
+  if (coTotalInput && document.activeElement !== coTotalInput) {
+    coTotalInput.value = total.toFixed(2);
+  }
+  const coSubtotal = document.getElementById('coSubtotal');
+  if (coSubtotal) coSubtotal.textContent = sym + subtotal.toFixed(2);
+  const coTax = document.getElementById('coTax');
+  if (coTax) coTax.textContent = sym + tax.toFixed(2);
+  const discRow = document.getElementById('coDiscRow');
+  if (discRow) {
+    if (discountInput && (parseFloat(discountInput.value) || 0) > 0) {
+      discRow.classList.remove('hidden');
+      document.getElementById('coDiscount').textContent = '-' + sym + (parseFloat(discountInput.value) || 0).toFixed(2);
+    } else {
+      discRow.classList.add('hidden');
+    }
+  }
+
+  const chargeAmount = document.getElementById('chargeAmount');
+  if (chargeAmount) chargeAmount.textContent = sym + total.toFixed(2);
+  refreshQuickCash(total);
+  updateChange();
+}
+
+function refreshQuickCash(total) {
+  const quickCash = document.getElementById('quickCash');
+  const modal = document.getElementById('checkoutModal');
+  if (!quickCash || !modal || modal.classList.contains('hidden')) return;
+  const sym = window.currencySymbol || '';
+  const amounts = [total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10, Math.ceil(total / 20) * 20];
+  const unique = amounts.filter(function (amt, i, arr) { return arr.indexOf(amt) === i; });
+  quickCash.innerHTML = unique.map(amt => `
+    <button onclick="document.getElementById('paidAmount').value='${amt.toFixed(2)}'; updateChange()" class="flex-1 text-xs h-8 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">${sym}${amt.toFixed(2)}</button>
+  `).join('');
 }
 
 function filterProducts() {
@@ -248,6 +359,9 @@ window.addToCart = addToCart;
 window.setCategory = setCategory;
 window.clearCart = clearCart;
 window.filterProducts = filterProducts;
+window.updateItemPrice = updateItemPrice;
+window.onFinalTotalInput = onFinalTotalInput;
+window.onDiscountInput = onDiscountInput;
 
 if (document.getElementById('productGrid')) {
   initPosPage();
@@ -270,27 +384,42 @@ function setCategory(catId) {
 // Checkout flow
 function openCheckout() {
   if (cart.length === 0) return;
-  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const tax = Math.round(subtotal * window.taxRate / 100 * 100) / 100;
-  const discount = parseFloat(document.getElementById('discountInput').value) || 0;
-  const total = Math.round((subtotal + tax - discount) * 100) / 100;
+  const { subtotal, tax, discount } = getComputedTotals();
+  const total = getChargedTotal();
+  const sym = window.currencySymbol || '';
 
-  document.getElementById('coSubtotal').textContent = currencySymbol + subtotal.toFixed(2);
-  document.getElementById('coTax').textContent = currencySymbol + tax.toFixed(2);
+  const itemsEl = document.getElementById('coItems');
+  if (itemsEl) {
+    itemsEl.innerHTML = cart.map(item => `
+      <div class="flex items-center gap-2 text-xs">
+        <span class="flex-1 min-w-0 truncate text-gray-700 dark:text-gray-200">${item.name} × ${item.quantity}</span>
+        <span class="text-gray-400 shrink-0">${sym}</span>
+        <input type="number" min="0" step="0.01" data-item-price="${item.productId}" value="${item.price.toFixed(2)}"
+          oninput="updateItemPrice('${item.productId}', this.value)"
+          class="w-20 h-7 text-right text-xs tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-1.5 focus:border-primary-500 focus:outline-none" />
+        <span data-co-line-total="${item.productId}" class="w-16 text-right tabular-nums shrink-0">${sym}${(item.price * item.quantity).toFixed(2)}</span>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('coSubtotal').textContent = sym + subtotal.toFixed(2);
+  document.getElementById('coTax').textContent = sym + tax.toFixed(2);
   const discRow = document.getElementById('coDiscRow');
   if (discount > 0) {
     discRow.classList.remove('hidden');
-    document.getElementById('coDiscount').textContent = '-' + currencySymbol + discount.toFixed(2);
+    document.getElementById('coDiscount').textContent = '-' + sym + discount.toFixed(2);
   } else {
     discRow.classList.add('hidden');
   }
-  document.getElementById('coTotal').textContent = currencySymbol + total.toFixed(2);
+  const coTotalInput = document.getElementById('coTotalInput');
+  if (coTotalInput) coTotalInput.value = total.toFixed(2);
 
   // Quick cash buttons
   const quickCash = document.getElementById('quickCash');
   const amounts = [total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10, Math.ceil(total / 20) * 20];
-  quickCash.innerHTML = amounts.map(amt => `
-    <button onclick="document.getElementById('paidAmount').value='${amt.toFixed(2)}'; updateChange()" class="flex-1 text-xs h-8 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">${currencySymbol}${amt.toFixed(2)}</button>
+  const unique = amounts.filter(function (amt, i, arr) { return arr.indexOf(amt) === i; });
+  quickCash.innerHTML = unique.map(amt => `
+    <button onclick="document.getElementById('paidAmount').value='${amt.toFixed(2)}'; updateChange()" class="flex-1 text-xs h-8 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">${sym}${amt.toFixed(2)}</button>
   `).join('');
 
   document.getElementById('paidAmount').value = '';
@@ -330,21 +459,24 @@ function setPayment(method) {
 }
 
 function updateChange() {
-  const total = parseFloat(document.getElementById('coTotal').textContent.replace(currencySymbol, ''));
-  const paid = parseFloat(document.getElementById('paidAmount').value) || 0;
   const changeRow = document.getElementById('changeRow');
-  if (paid >= total) {
+  const paidEl = document.getElementById('paidAmount');
+  if (!changeRow || !paidEl) return;
+  const total = getChargedTotal();
+  const paid = parseFloat(paidEl.value) || 0;
+  const sym = window.currencySymbol || '';
+  if (paid >= total && paidEl.value !== '') {
     changeRow.classList.remove('hidden');
-    document.getElementById('changeAmount').textContent = currencySymbol + (paid - total).toFixed(2);
+    document.getElementById('changeAmount').textContent = sym + (paid - total).toFixed(2);
   } else {
     changeRow.classList.add('hidden');
   }
 }
 
 async function processSale() {
-  const total = parseFloat(document.getElementById('coTotal').textContent.replace(currencySymbol, ''));
+  const total = getChargedTotal();
+  const paid = parseFloat(document.getElementById('paidAmount').value) || 0;
   if (selectedPayment === 'cash') {
-    const paid = parseFloat(document.getElementById('paidAmount').value) || 0;
     if (paid < total) {
       alert('Insufficient cash received');
       return;
@@ -361,10 +493,12 @@ async function processSale() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: cart.map(i => ({ productId: i.productId, quantity: i.quantity })),
+        items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
         customer_id: selectedCustomer,
         tax_rate: window.taxRate,
         discount: discount,
+        total: total,
+        cash_received: selectedPayment === 'cash' ? paid : null,
         payment_method: selectedPayment,
       }),
     });
@@ -399,16 +533,23 @@ function showReceipt(order) {
         <div class="flex justify-between"><span>Customer:</span><span>${order.customer_name}</span></div>
       </div>
       <div class="py-2 border-b border-dashed border-gray-300 space-y-1">
-        ${order.items.map(item => `
-          <div class="flex justify-between text-[10px]"><span>${item.quantity}× ${item.name}</span><span>${currencySymbol}${item.subtotal.toFixed(2)}</span></div>
-        `).join('')}
+        ${order.items.map(item => {
+          const orig = item.original_price != null ? Number(item.original_price) : Number(item.price);
+          const sold = Number(item.price);
+          const changed = Math.abs(orig - sold) > 0.001;
+          return `<div class="flex justify-between text-[10px]"><span>${item.quantity}× ${item.name}${changed ? ` <span class="text-gray-400">(${currencySymbol}${orig.toFixed(2)}→${currencySymbol}${sold.toFixed(2)})</span>` : ''}</span><span>${currencySymbol}${item.subtotal.toFixed(2)}</span></div>`;
+        }).join('')}
       </div>
       <div class="py-2 space-y-1 text-[10px]">
         <div class="flex justify-between"><span>Subtotal</span><span>${currencySymbol}${order.subtotal.toFixed(2)}</span></div>
         <div class="flex justify-between"><span>Tax (${order.tax_rate}%)</span><span>${currencySymbol}${order.tax.toFixed(2)}</span></div>
         ${order.discount > 0 ? `<div class="flex justify-between"><span>Discount</span><span>-${currencySymbol}${order.discount.toFixed(2)}</span></div>` : ''}
+        ${order.original_total != null && Math.abs(Number(order.original_total) - Number(order.total)) > 0.001 ? `<div class="flex justify-between"><span>Original</span><span>${currencySymbol}${Number(order.original_total).toFixed(2)}</span></div>` : ''}
         <div class="flex justify-between font-bold text-xs pt-1 border-t border-gray-300"><span>TOTAL</span><span>${currencySymbol}${order.total.toFixed(2)}</span></div>
         <div class="flex justify-between"><span>Paid via ${order.payment_method}</span><span>${currencySymbol}${order.total.toFixed(2)}</span></div>
+        ${order.payment_method === 'cash' && order.cash_received != null ? `
+        <div class="flex justify-between"><span>Cash received</span><span>${currencySymbol}${Number(order.cash_received).toFixed(2)}</span></div>
+        <div class="flex justify-between"><span>Change</span><span>${currencySymbol}${(Number(order.cash_received) - order.total).toFixed(2)}</span></div>` : ''}
       </div>
       <div class="text-center pt-2 text-[10px]">${window.receiptFooter}</div>
     </div>

@@ -9,17 +9,13 @@ Seed QuickPOS database with demo data:
 Run: python seed.py
 """
 import sqlite3
-import uuid
 import random
+import json
 from datetime import datetime, timedelta
 from models import DB_PATH, init_db, execute, query_all, query_one
 from werkzeug.security import generate_password_hash
 
 random.seed(42)  # Reproducible demo data
-
-
-def uid():
-    return str(uuid.uuid4())
 
 
 def now_iso():
@@ -100,68 +96,71 @@ def main():
     # Wipe existing data
     print("Clearing existing data...")
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = OFF")
     cur = conn.cursor()
     for table in ["order_items", "orders", "products", "categories", "customers", "settings", "users", "password_resets"]:
         cur.execute(f"DELETE FROM {table}")
+    try:
+        cur.execute("DELETE FROM sqlite_sequence")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
+    conn.execute("PRAGMA foreign_keys = ON")
 
     # Categories
     print("Creating categories...")
     cat_ids = []
     for c in CATEGORIES:
-        cid = uid()
-        cat_ids.append(cid)
         cur.execute(
-            "INSERT INTO categories (id, name, description, color) VALUES (?, ?, ?, ?)",
-            (cid, c["name"], c["description"], c["color"])
+            "INSERT INTO categories (name, description, color) VALUES (?, ?, ?)",
+            (c["name"], c["description"], c["color"])
         )
+        cat_ids.append(cur.lastrowid)
 
     # Products
     print("Creating products...")
     prod_ids = []
     for p in PRODUCTS:
-        pid = uid()
-        prod_ids.append((pid, p))
         cur.execute(
             """INSERT INTO products
-            (id, name, sku, barcode, description, category_id, price, cost, stock, low_stock_threshold, unit, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-            (pid, p["name"], p["sku"], p["barcode"], None, cat_ids[p["cat"]],
+            (name, sku, barcode, description, category_id, price, cost, stock, low_stock_threshold, unit, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (p["name"], p["sku"], p["barcode"], None, cat_ids[p["cat"]],
              p["price"], p["cost"], p["stock"], p["low"], p["unit"])
         )
+        prod_ids.append((cur.lastrowid, p))
 
     # Customers
     print("Creating customers...")
     cust_ids = []
     for c in CUSTOMERS:
-        cid = uid()
-        cust_ids.append(cid)
         cur.execute(
             """INSERT INTO customers
-            (id, name, email, phone, address, loyalty_points)
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            (cid, c["name"], c["email"], c["phone"], c["address"], c["loyalty_points"])
+            (name, email, phone, address, loyalty_points)
+            VALUES (?, ?, ?, ?, ?)""",
+            (c["name"], c["email"], c["phone"], c["address"], c["loyalty_points"])
         )
+        cust_ids.append(cur.lastrowid)
 
     # Settings
     print("Creating settings...")
     cur.execute(
         """INSERT INTO settings
-        (id, store_name, address, phone, email, tax_rate, currency, currency_symbol, receipt_footer, low_stock_alert_enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-        (uid(), "QuickPOS Market", "123 Main Street, Springfield", "+1 555 0100",
+        (store_name, address, phone, email, tax_rate, currency, currency_symbol, receipt_footer, low_stock_alert_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+        ("QuickPOS Market", "123 Main Street, Springfield", "+1 555 0100",
          "hello@quickpos.market", 8, "PKR", "Rs",
          "Thank you for shopping at QuickPOS! Come back soon.")
     )
 
     # Default admin — created before orders so sales are attributed to a real user
     print("Creating default admin user...")
-    admin_id = uid()
     admin_pw = generate_password_hash("admin123")
     cur.execute(
-        "INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES (?, ?, ?, ?, 'admin', 1)",
-        (admin_id, "Admin", "admin@quickpos.com", admin_pw)
+        "INSERT INTO users (name, email, password_hash, role, is_active) VALUES (?, ?, ?, 'admin', 1)",
+        ("Admin", "admin@quickpos.com", admin_pw)
     )
+    admin_id = cur.lastrowid
 
     # Demo orders
     print("Generating demo orders...")
@@ -191,10 +190,13 @@ def main():
             items.append({
                 "product_id": pid,
                 "name": p["name"],
+                "original_price": p["price"],
                 "price": p["price"],
                 "cost": p["cost"],
                 "quantity": qty,
                 "subtotal": line_total,
+                "original_subtotal": line_total,
+                "price_changed": False,
             })
 
         if not items:
@@ -202,6 +204,7 @@ def main():
 
         tax_rate = 8
         tax = round(subtotal * tax_rate / 100, 2)
+        original_total = round(subtotal + tax, 2)
         discount = round(subtotal * 0.1, 2) if random.random() > 0.85 else 0
         total = round(subtotal + tax - discount, 2)
 
@@ -212,24 +215,65 @@ def main():
 
         order_number = f"ORD-{10000 + order_count + 1}"
         order_count += 1
-        order_id = uid()
+        payment_method = random.choice(PAYMENT_METHODS)
+        cash_received = None
+        if payment_method == "cash":
+            extra = random.choice([0, 0, 10, 20, 50, 100])
+            cash_received = round(total + extra, 2)
+        created_at = random_date(30)
         cur.execute(
             """INSERT INTO orders
-            (id, order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax, discount, total,
-             payment_method, payment_status, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
-            (order_id, order_number, customer_id, admin_id, "Admin",
-             round(subtotal, 2), tax_rate, tax, discount, total,
-             random.choice(PAYMENT_METHODS), random_date(30))
+            (order_number, customer_id, user_id, cashier_name, subtotal, tax_rate, tax, discount,
+             original_total, total, cash_received, payment_method, payment_status, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'completed', ?)""",
+            (order_number, customer_id, admin_id, "Admin",
+             round(subtotal, 2), tax_rate, tax, discount, original_total, total,
+             cash_received, payment_method, created_at)
         )
+        order_id = cur.lastrowid
+        order_detail = json.dumps({
+            "order_id": order_id,
+            "order_number": order_number,
+            "customer_id": customer_id,
+            "user_id": admin_id,
+            "cashier_name": "Admin",
+            "items": [
+                {
+                    "product_id": it["product_id"],
+                    "name": it["name"],
+                    "catalog_price": it["original_price"],
+                    "sold_price": it["price"],
+                    "price_changed": it["price_changed"],
+                    "quantity": it["quantity"],
+                    "cost": it["cost"],
+                    "subtotal": it["subtotal"],
+                    "original_subtotal": it["original_subtotal"],
+                }
+                for it in items
+            ],
+            "price_changes": [],
+            "original_subtotal": round(subtotal, 2),
+            "original_tax": tax,
+            "original_total": original_total,
+            "subtotal": round(subtotal, 2),
+            "tax_rate": tax_rate,
+            "tax": tax,
+            "discount": discount,
+            "total": total,
+            "total_overridden": False,
+            "cash_received": cash_received,
+            "payment_method": payment_method,
+            "created_at": created_at,
+        }, ensure_ascii=False)
+        cur.execute("UPDATE orders SET order_detail = ? WHERE id = ?", (order_detail, order_id))
 
         for item in items:
             cur.execute(
                 """INSERT INTO order_items
-                (id, order_id, product_id, name, price, cost, quantity, subtotal)
+                (order_id, product_id, name, original_price, price, cost, quantity, subtotal)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (uid(), order_id, item["product_id"], item["name"],
-                 item["price"], item["cost"], item["quantity"], item["subtotal"])
+                (order_id, item["product_id"], item["name"],
+                 item["original_price"], item["price"], item["cost"], item["quantity"], item["subtotal"])
             )
 
         # Decrement stock
