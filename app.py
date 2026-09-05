@@ -17,7 +17,7 @@ import smtplib
 import sys
 import uuid
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
@@ -211,6 +211,19 @@ def _sql_ts(value):
     if len(text) == 10:
         return text + " 00:00:00"
     return text[:19]
+
+
+def _pk_ts(fmt="%Y%m%d_%H%M%S"):
+    """Shop-local timestamp (Asia/Karachi).
+
+    Windows has no IANA zoneinfo; the frozen .exe needs the tzdata package
+    bundled via QuickPOS.spec. If the zone is still missing, fall back to
+    the machine's local clock so backup filenames do not crash.
+    """
+    try:
+        return datetime.now(ZoneInfo("Asia/Karachi")).strftime(fmt)
+    except (ZoneInfoNotFoundError, Exception):
+        return datetime.now().strftime(fmt)
 
 
 def _range_sql():
@@ -833,7 +846,7 @@ def backup_view():
 @admin_required
 def backup_create():
     _ensure_backup_dir()
-    ts = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%Y%m%d_%H%M%S")
+    ts = _pk_ts()
     name = f"quickpos_{ts}.db"
     dest = os.path.join(BACKUP_DIR, name)
     try:
@@ -852,7 +865,7 @@ def backup_download():
         return redirect(url_for("backup_view"))
     with open(DB_PATH, "rb") as f:
         data = f.read()
-    ts = datetime.now(ZoneInfo("Asia/Karachi")).strftime("%Y%m%d_%H%M%S")
+    ts = _pk_ts()
     return Response(
         data,
         mimetype="application/octet-stream",

@@ -28,6 +28,9 @@ hiddenimports = [
     "urllib3",
     "urllib3.util",
     "urllib3.util.ssl_",
+    # Windows-only at runtime: IANA TZ data for zoneinfo (Asia/Karachi backups).
+    "tzdata",
+    "zoneinfo",
 ]
 
 for pkg in (
@@ -38,6 +41,8 @@ for pkg in (
     "httplib2",
     "certifi",
     "cryptography",
+    # Bundle tzdata zone files into the Windows .exe. Harmless on macOS.
+    "tzdata",
 ):
     try:
         pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
