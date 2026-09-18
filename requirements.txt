@@ -3,3 +3,6 @@ google-auth-oauthlib>=1.0.0
 google-api-python-client>=2.0.0
 rsa>=4.9
 cryptography>=43,<45
+# Windows has no IANA zoneinfo database. Required for ZoneInfo("Asia/Karachi")
+# in the frozen .exe (Mac/Linux use the OS zoneinfo and do not need this).
+tzdata>=2024.1
